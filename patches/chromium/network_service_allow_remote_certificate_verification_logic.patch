@@ -7,7 +7,7 @@ This adds a callback from the network service that's used to implement
 session.setCertificateVerifyCallback.
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index ac3b167a435eeb236da13ff0092e2128a5a2ead7..20f435f8432e1fa08da32beeb7e7f098d9033185 100644
+index 0a5ee4bd20bb54eb00def65134fa8d45c401f052..6887a784db5a2a9df582a2dc26f03af61b5c004c 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -147,6 +147,11 @@
@@ -136,7 +136,7 @@ index ac3b167a435eeb236da13ff0092e2128a5a2ead7..20f435f8432e1fa08da32beeb7e7f098
  void NetworkContext::CreateURLLoaderFactory(
      mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
      mojom::URLLoaderFactoryParamsPtr params) {
-@@ -2395,6 +2500,9 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2461,6 +2566,9 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
          std::move(cert_verifier));
      cert_verifier = base::WrapUnique(cert_verifier_with_trust_anchors_.get());
  #endif  // BUILDFLAG(IS_CHROMEOS)
@@ -147,7 +147,7 @@ index ac3b167a435eeb236da13ff0092e2128a5a2ead7..20f435f8432e1fa08da32beeb7e7f098
  
    builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
 diff --git a/services/network/network_context.h b/services/network/network_context.h
-index a1ac41b0850de88c3334d7b7aa3bfc470365b873..17ecfd109db3e9dbcc27ec291f6c6021c9b6f0eb 100644
+index 3f51ecd9694c900ffb21d7e9ec5d737387ea39ca..9bd43e9e373b74f2f8fcc8f12ab0e0c38927dfcb 100644
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
 @@ -114,6 +114,7 @@ class URLMatcher;
@@ -167,7 +167,7 @@ index a1ac41b0850de88c3334d7b7aa3bfc470365b873..17ecfd109db3e9dbcc27ec291f6c6021
    void ResetURLLoaderFactories() override;
    void GetViaObliviousHttp(
        mojom::ObliviousHttpRequestPtr request,
-@@ -896,6 +899,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+@@ -899,6 +902,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
    std::vector<base::OnceClosure> dismount_closures_;
  #endif  // BUILDFLAG(IS_DIRECTORY_TRANSFER_REQUIRED)
  
@@ -177,7 +177,7 @@ index a1ac41b0850de88c3334d7b7aa3bfc470365b873..17ecfd109db3e9dbcc27ec291f6c6021
    std::unique_ptr<HostResolver> internal_host_resolver_;
    // Map values set to non-null only if that HostResolver has its own private
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 6164ab364a4044b9ca63d78dd5cc8c94ede7894c..64a840b13bc6c07112060f48d4f77507eb84994a 100644
+index 0af727743712cb82c882c3597e3b75e9f2ef5303..b678694478f62fc096bb2f79a1982492a0b9a228 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -317,6 +317,17 @@ struct NetworkContextFilePaths {
