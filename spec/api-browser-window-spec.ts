@@ -2060,10 +2060,7 @@ describe('BrowserWindow module', () => {
     beforeEach(() => {
       w = new BrowserWindow({ show: false });
     });
-    afterEach(async () => {
-      await closeWindow(w);
-      w = null as unknown as BrowserWindow;
-    });
+    afterEach(closeAllWindows);
 
     describe('BrowserWindow.selectPreviousTab()', () => {
       it('does not throw', () => {
@@ -2130,6 +2127,18 @@ describe('BrowserWindow module', () => {
         expect(() => {
           w.addTabbedWindow(w);
         }).to.throw('AddTabbedWindow cannot be called by a window on itself.');
+      });
+    });
+
+    describe('BrowserWindow.tabbingIdentifier', () => {
+      it('is undefined if no tabbingIdentifier was set', () => {
+        const w = new BrowserWindow({ show: false });
+        expect(w.tabbingIdentifier).to.be.undefined('tabbingIdentifier');
+      });
+
+      it('returns the window tabbingIdentifier', () => {
+        const w = new BrowserWindow({ show: false, tabbingIdentifier: 'group1' });
+        expect(w.tabbingIdentifier).to.equal('group1');
       });
     });
   });
@@ -4671,7 +4680,27 @@ describe('BrowserWindow module', () => {
         expect(w.getChildWindows().length).to.equal(0);
       });
 
-      ifit(process.platform === 'darwin')('child window matches visibility when visibility changes', async () => {
+      ifit(process.platform === 'darwin')('only shows the intended window when a child with siblings is shown', async () => {
+        const w = new BrowserWindow({ show: false });
+        const childOne = new BrowserWindow({ show: false, parent: w });
+        const childTwo = new BrowserWindow({ show: false, parent: w });
+
+        const parentShown = once(w, 'show');
+        w.show();
+        await parentShown;
+
+        expect(childOne.isVisible()).to.be.false('childOne is visible');
+        expect(childTwo.isVisible()).to.be.false('childTwo is visible');
+
+        const childOneShown = once(childOne, 'show');
+        childOne.show();
+        await childOneShown;
+
+        expect(childOne.isVisible()).to.be.true('childOne is not visible');
+        expect(childTwo.isVisible()).to.be.false('childTwo is visible');
+      });
+
+      ifit(process.platform === 'darwin')('child matches parent visibility when parent visibility changes', async () => {
         const w = new BrowserWindow({ show: false });
         const c = new BrowserWindow({ show: false, parent: w });
 
@@ -4698,7 +4727,7 @@ describe('BrowserWindow module', () => {
         expect(c.isVisible()).to.be.true('child is visible');
       });
 
-      ifit(process.platform === 'darwin')('matches child window visibility when visibility changes', async () => {
+      ifit(process.platform === 'darwin')('parent matches child visibility when child visibility changes', async () => {
         const w = new BrowserWindow({ show: false });
         const c = new BrowserWindow({ show: false, parent: w });
 

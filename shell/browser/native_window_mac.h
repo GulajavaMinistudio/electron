@@ -145,6 +145,7 @@ class NativeWindowMac : public NativeWindow,
   void MoveTabToNewWindow() override;
   void ToggleTabBar() override;
   bool AddTabbedWindow(NativeWindow* window) override;
+  absl::optional<std::string> GetTabbingIdentifier() const override;
   void SetAspectRatio(double aspect_ratio,
                       const gfx::Size& extra_size) override;
   void PreviewFile(const std::string& path,
@@ -187,6 +188,9 @@ class NativeWindowMac : public NativeWindow,
   void SetHasDeferredWindowClose(bool defer_close) {
     has_deferred_window_close_ = defer_close;
   }
+
+  void set_wants_to_be_visible(bool visible) { wants_to_be_visible_ = visible; }
+  bool wants_to_be_visible() const { return wants_to_be_visible_; }
 
   enum class VisualEffectState {
     kFollowWindow,
@@ -253,6 +257,10 @@ class NativeWindowMac : public NativeWindow,
   // fullscreen transition, to defer the -[NSWindow close] call until the
   // transition is complete.
   bool has_deferred_window_close_ = false;
+
+  // If true, the window is either visible, or wants to be visible but is
+  // currently hidden due to having a hidden parent.
+  bool wants_to_be_visible_ = false;
 
   NSInteger attention_request_id_ = 0;  // identifier from requestUserAttention
 
