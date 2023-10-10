@@ -3,7 +3,7 @@ import { AddressInfo } from 'node:net';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import { BrowserWindow, ipcMain, webContents, session, app, BrowserView, WebContents } from 'electron/main';
+import { BrowserWindow, ipcMain, webContents, session, app, BrowserView, WebContents, deprecate } from 'electron/main';
 import { closeAllWindows } from './lib/window-helpers';
 import { ifdescribe, defer, waitUntil, listen, ifit } from './lib/spec-helpers';
 import { once } from 'node:events';
@@ -2331,13 +2331,30 @@ describe('webContents module', () => {
   });
 
   describe('crashed event', () => {
-    it('does not crash main process when destroying WebContents in it', async () => {
+    afterEach(() => deprecate.setHandler(null));
+
+    it('does not crash main process when destroying WebContents in it', (done) => {
       const contents = (webContents as typeof ElectronInternal.WebContents).create({ nodeIntegration: true });
-      const crashEvent = once(contents, 'render-process-gone');
+      contents.once('crashed', () => {
+        contents.destroy();
+        done();
+      });
+      contents.loadURL('about:blank').then(() => contents.forcefullyCrashRenderer());
+    });
+
+    it('logs a warning', async () => {
+      const contents = (webContents as typeof ElectronInternal.WebContents).create({ nodeIntegration: true });
       await contents.loadURL('about:blank');
+
+      const messages: string[] = [];
+      deprecate.setHandler(message => messages.push(message));
+
+      const crashEvent = once(contents, 'crashed');
       contents.forcefullyCrashRenderer();
-      await crashEvent;
-      contents.destroy();
+      const [, killed] = await crashEvent;
+
+      expect(killed).to.be.a('boolean');
+      expect(messages).to.deep.equal(['\'crashed event\' is deprecated and will be removed. Please use \'render-process-gone event\' instead.']);
     });
   });
 
