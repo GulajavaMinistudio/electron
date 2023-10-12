@@ -3,9 +3,10 @@ import { AddressInfo } from 'node:net';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import { BrowserWindow, ipcMain, webContents, session, app, BrowserView, WebContents, deprecate } from 'electron/main';
+import { BrowserWindow, ipcMain, webContents, session, app, BrowserView, WebContents } from 'electron/main';
 import { closeAllWindows } from './lib/window-helpers';
 import { ifdescribe, defer, waitUntil, listen, ifit } from './lib/spec-helpers';
+import { expectDeprecationMessages } from './lib/deprecate-helpers';
 import { once } from 'node:events';
 import { setTimeout } from 'node:timers/promises';
 
@@ -429,6 +430,19 @@ describe('webContents module', () => {
       } catch (e) {
         expect((e as Error).message).to.match(/Debugger is already attached to the target/);
       }
+    });
+
+    it('fails if loadURL is called inside a non-reentrant critical section', (done) => {
+      w.webContents.once('did-fail-load', (_event, _errorCode, _errorDescription, validatedURL) => {
+        expect(validatedURL).to.contain('blank.html');
+        done();
+      });
+
+      w.webContents.once('did-start-loading', () => {
+        w.loadURL(`file://${fixturesPath}/pages/blank.html`);
+      });
+
+      w.loadURL('data:text/html,<h1>HELLO</h1>');
     });
 
     it('sets appropriate error information on rejection', async () => {
@@ -2331,8 +2345,6 @@ describe('webContents module', () => {
   });
 
   describe('crashed event', () => {
-    afterEach(() => deprecate.setHandler(null));
-
     it('does not crash main process when destroying WebContents in it', (done) => {
       const contents = (webContents as typeof ElectronInternal.WebContents).create({ nodeIntegration: true });
       contents.once('crashed', () => {
@@ -2346,15 +2358,13 @@ describe('webContents module', () => {
       const contents = (webContents as typeof ElectronInternal.WebContents).create({ nodeIntegration: true });
       await contents.loadURL('about:blank');
 
-      const messages: string[] = [];
-      deprecate.setHandler(message => messages.push(message));
+      expectDeprecationMessages(async () => {
+        const crashEvent = once(contents, 'crashed');
+        contents.forcefullyCrashRenderer();
+        const [, killed] = await crashEvent;
 
-      const crashEvent = once(contents, 'crashed');
-      contents.forcefullyCrashRenderer();
-      const [, killed] = await crashEvent;
-
-      expect(killed).to.be.a('boolean');
-      expect(messages).to.deep.equal(['\'crashed event\' is deprecated and will be removed. Please use \'render-process-gone event\' instead.']);
+        expect(killed).to.be.a('boolean');
+      }, '\'crashed event\' is deprecated and will be removed. Please use \'render-process-gone event\' instead.');
     });
   });
 

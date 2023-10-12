@@ -33,6 +33,7 @@
 #include "components/security_state/content/content_utils.h"
 #include "components/security_state/core/security_state.h"
 #include "content/browser/renderer_host/frame_tree_node.h"  // nogncheck
+#include "content/browser/renderer_host/navigation_controller_impl.h"  // nogncheck
 #include "content/browser/renderer_host/render_frame_host_manager.h"  // nogncheck
 #include "content/browser/renderer_host/render_widget_host_impl.h"  // nogncheck
 #include "content/browser/renderer_host/render_widget_host_view_base.h"  // nogncheck
@@ -1658,8 +1659,7 @@ void WebContents::RenderFrameCreated(
   if (lifecycle_state == content::RenderFrameHost::LifecycleState::kActive) {
     v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
     v8::HandleScope handle_scope(isolate);
-    gin_helper::Dictionary details =
-        gin_helper::Dictionary::CreateEmpty(isolate);
+    auto details = gin_helper::Dictionary::CreateEmpty(isolate);
     details.SetGetter("frame", render_frame_host);
     Emit("frame-created", details);
   }
@@ -1731,7 +1731,7 @@ void WebContents::PrimaryMainFrameRenderProcessGone(
     base::TerminationStatus status) {
   v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
   v8::HandleScope handle_scope(isolate);
-  gin_helper::Dictionary details = gin_helper::Dictionary::CreateEmpty(isolate);
+  auto details = gin_helper::Dictionary::CreateEmpty(isolate);
   details.Set("reason", status);
   details.Set("exitCode", web_contents()->GetCrashedErrorCode());
   Emit("render-process-gone", details);
@@ -2385,8 +2385,20 @@ void WebContents::LoadURL(const GURL& url,
   params.transition_type = ui::PageTransitionFromInt(
       ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR);
   params.override_user_agent = content::NavigationController::UA_OVERRIDE_TRUE;
-  // Discard non-committed entries to ensure that we don't re-use a pending
-  // entry
+
+  // It's not safe to start a new navigation or otherwise discard the current
+  // one while the call that started it is still on the stack. See
+  // http://crbug.com/347742.
+  auto& ctrl_impl = static_cast<content::NavigationControllerImpl&>(
+      web_contents()->GetController());
+  if (ctrl_impl.in_navigate_to_pending_entry()) {
+    Emit("did-fail-load", static_cast<int>(net::ERR_FAILED),
+         net::ErrorToShortString(net::ERR_FAILED), url.possibly_invalid_spec(),
+         true);
+    return;
+  }
+
+  // Discard non-committed entries to ensure we don't re-use a pending entry.
   web_contents()->GetController().DiscardNonCommittedEntries();
   web_contents()->GetController().LoadURLWithParams(params);
 
@@ -2529,7 +2541,7 @@ v8::Local<v8::Value> WebContents::GetWebRTCUDPPortRange(
     v8::Isolate* isolate) const {
   auto* prefs = web_contents()->GetMutableRendererPrefs();
 
-  gin_helper::Dictionary dict = gin::Dictionary::CreateEmpty(isolate);
+  auto dict = gin_helper::Dictionary::CreateEmpty(isolate);
   dict.Set("min", static_cast<uint32_t>(prefs->webrtc_udp_min_port));
   dict.Set("max", static_cast<uint32_t>(prefs->webrtc_udp_max_port));
   return dict.GetHandle();
@@ -2907,8 +2919,7 @@ void WebContents::OnGetDeviceNameToUse(
 }
 
 void WebContents::Print(gin::Arguments* args) {
-  gin_helper::Dictionary options =
-      gin::Dictionary::CreateEmpty(args->isolate());
+  auto options = gin_helper::Dictionary::CreateEmpty(args->isolate());
   base::Value::Dict settings;
 
   if (args->Length() >= 1 && !args->GetNext(&options)) {
@@ -2933,8 +2944,7 @@ void WebContents::Print(gin::Arguments* args) {
   settings.Set(printing::kSettingShouldPrintBackgrounds, print_background);
 
   // Set custom margin settings
-  gin_helper::Dictionary margins =
-      gin::Dictionary::CreateEmpty(args->isolate());
+  auto margins = gin_helper::Dictionary::CreateEmpty(args->isolate());
   if (options.Get("margins", &margins)) {
     printing::mojom::MarginType margin_type =
         printing::mojom::MarginType::kDefaultMargins;
