@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -293,9 +294,9 @@ void ErrorMessageListener(v8::Local<v8::Message> message,
 
 // Only allow a specific subset of options in non-ELECTRON_RUN_AS_NODE mode.
 // If node CLI inspect support is disabled, allow no debug options.
-bool IsAllowedOption(base::StringPiece option) {
+bool IsAllowedOption(const std::string_view option) {
   static constexpr auto debug_options =
-      base::MakeFixedFlatSet<base::StringPiece>({
+      base::MakeFixedFlatSet<std::string_view>({
           "--debug",
           "--debug-brk",
           "--debug-port",
@@ -307,7 +308,7 @@ bool IsAllowedOption(base::StringPiece option) {
       });
 
   // This should be aligned with what's possible to set via the process object.
-  static constexpr auto options = base::MakeFixedFlatSet<base::StringPiece>({
+  static constexpr auto options = base::MakeFixedFlatSet<std::string_view>({
       "--dns-result-order",
       "--no-deprecation",
       "--throw-deprecation",
@@ -325,7 +326,7 @@ bool IsAllowedOption(base::StringPiece option) {
 // See https://nodejs.org/api/cli.html#cli_node_options_options
 void SetNodeOptions(base::Environment* env) {
   // Options that are unilaterally disallowed
-  static constexpr auto disallowed = base::MakeFixedFlatSet<base::StringPiece>({
+  static constexpr auto disallowed = base::MakeFixedFlatSet<std::string_view>({
       "--enable-fips",
       "--experimental-policy",
       "--force-fips",
@@ -334,7 +335,7 @@ void SetNodeOptions(base::Environment* env) {
       "--use-openssl-ca",
   });
 
-  static constexpr auto pkg_opts = base::MakeFixedFlatSet<base::StringPiece>({
+  static constexpr auto pkg_opts = base::MakeFixedFlatSet<std::string_view>({
       "--http-parser",
       "--max-http-header-size",
   });
@@ -475,7 +476,7 @@ std::vector<std::string> NodeBindings::ParseNodeCliFlags() {
 #else
     const auto& option = arg;
 #endif
-    const auto stripped = base::StringPiece(option).substr(0, option.find('='));
+    const auto stripped = std::string_view{option}.substr(0, option.find('='));
     // Only allow no-op or a small set of debug/trace related options.
     if (IsAllowedOption(stripped) || stripped == "--")
       args.push_back(option);
@@ -556,7 +557,7 @@ std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
     node::MultiIsolatePlatform* platform,
     std::vector<std::string> args,
     std::vector<std::string> exec_args,
-    absl::optional<base::RepeatingCallback<void()>> on_app_code_ready) {
+    std::optional<base::RepeatingCallback<void()>> on_app_code_ready) {
   // Feed node the path to initialization script.
   std::string process_type;
   switch (browser_env_) {
@@ -762,7 +763,7 @@ std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
 std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
     v8::Handle<v8::Context> context,
     node::MultiIsolatePlatform* platform,
-    absl::optional<base::RepeatingCallback<void()>> on_app_code_ready) {
+    std::optional<base::RepeatingCallback<void()>> on_app_code_ready) {
 #if BUILDFLAG(IS_WIN)
   auto& electron_args = ElectronCommandLine::argv();
   std::vector<std::string> args(electron_args.size());
