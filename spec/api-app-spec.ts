@@ -760,7 +760,8 @@ describe('app module', () => {
         }).to.throw(/'name' is required when type is not mainAppService/);
       });
 
-      ifit(isVenturaOrHigher)('throws when getting non-default type with no name', () => {
+      // TODO this test does not work on CircleCI arm64 macs
+      ifit(isVenturaOrHigher && process.arch !== 'arm64')('throws when getting non-default type with no name', () => {
         expect(() => {
           app.getLoginItemSettings({
             type: 'daemonService'
@@ -992,6 +993,44 @@ describe('app module', () => {
         app.setAccessibilitySupportEnabled(true);
         expect(app.isAccessibilitySupportEnabled()).to.eql(true);
       });
+    });
+  });
+
+  ifdescribe(process.platform === 'win32')('setJumpList(categories)', () => {
+    it('throws an error when categories is not null or an array', () => {
+      expect(() => {
+        app.setJumpList('string' as any);
+      }).to.throw('Argument must be null or an array of categories');
+    });
+
+    it('can get jump list settings', () => {
+      const settings = app.getJumpListSettings();
+      expect(settings).to.eql({ minItems: 10, removedItems: [] });
+    });
+
+    it('can set a jump list with an array of categories', () => {
+      expect(() => {
+        app.setJumpList([
+          { type: 'frequent' },
+          {
+            items: [{
+              type: 'task',
+              title: 'New Project',
+              program: process.execPath,
+              args: '--new-project',
+              description: 'Create a new project.'
+            },
+            { type: 'separator' },
+            {
+              type: 'task',
+              title: 'Recover Project',
+              program: process.execPath,
+              args: '--recover-project',
+              description: 'Recover Project'
+            }]
+          }
+        ]);
+      }).to.not.throw();
     });
   });
 
