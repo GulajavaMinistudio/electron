@@ -700,6 +700,8 @@ source_set("electron_lib") {
     sources += [
       "shell/browser/printing/print_view_manager_electron.cc",
       "shell/browser/printing/print_view_manager_electron.h",
+      "shell/browser/printing/printing_utils.cc",
+      "shell/browser/printing/printing_utils.h",
       "shell/renderer/printing/print_render_frame_helper_delegate.cc",
       "shell/renderer/printing/print_render_frame_helper_delegate.h",
     ]
@@ -745,6 +747,7 @@ source_set("electron_lib") {
       "//components/pdf/browser",
       "//components/pdf/browser:interceptors",
       "//components/pdf/common:constants",
+      "//components/pdf/common:util",
       "//components/pdf/renderer",
       "//pdf",
     ]
@@ -1464,8 +1467,10 @@ dist_zip("hunspell_dictionaries_zip") {
 }
 
 copy("libcxx_headers") {
-  sources = libcxx_headers + libcxx_licenses +
-            [ "//buildtools/third_party/libc++/__config_site" ]
+  sources = libcxx_headers + libcxx_licenses + [
+              "//buildtools/third_party/libc++/__assertion_handler",
+              "//buildtools/third_party/libc++/__config_site",
+            ]
   outputs = [ "$target_gen_dir/electron_libcxx_include/{{source_root_relative_dir}}/{{source_file_part}}" ]
 }
 
