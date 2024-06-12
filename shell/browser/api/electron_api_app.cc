@@ -808,12 +808,6 @@ void App::BrowserChildProcessCrashedOrKilled(
   if (!data.name.empty()) {
     details.Set("name", data.name);
   }
-  if (data.process_type == content::PROCESS_TYPE_UTILITY) {
-    base::ProcessId pid = data.GetProcess().Pid();
-    auto utility_process_wrapper = UtilityProcessWrapper::FromProcessId(pid);
-    if (utility_process_wrapper)
-      utility_process_wrapper->Shutdown(info.exit_code);
-  }
   Emit("child-process-gone", details);
 }
 
@@ -1276,10 +1270,17 @@ std::vector<gin_helper::Dictionary> App::GetAppMetrics(v8::Isolate* isolate) {
     auto pid_dict = gin_helper::Dictionary::CreateEmpty(isolate);
     auto cpu_dict = gin_helper::Dictionary::CreateEmpty(isolate);
 
-    double usage =
-        process_metric.second->metrics->GetPlatformIndependentCPUUsage()
-            .value_or(0);
-    cpu_dict.Set("percentCPUUsage", usage / processor_count);
+    // Default usage percentage to 0 for compatibility
+    double usagePercent = 0;
+    if (auto usage = process_metric.second->metrics->GetCumulativeCPUUsage();
+        usage.has_value()) {
+      cpu_dict.Set("cumulativeCPUUsage", usage->InSecondsF());
+      usagePercent =
+          process_metric.second->metrics->GetPlatformIndependentCPUUsage(
+              *usage);
+    }
+
+    cpu_dict.Set("percentCPUUsage", usagePercent / processor_count);
 
 #if !BUILDFLAG(IS_WIN)
     cpu_dict.Set("idleWakeupsPerSecond",
@@ -1575,15 +1576,6 @@ void ConfigureHostResolver(v8::Isolate* isolate,
   }
   net::SecureDnsMode secure_dns_mode = net::SecureDnsMode::kOff;
   std::string default_doh_templates;
-  if (base::FeatureList::IsEnabled(features::kDnsOverHttps)) {
-    if (features::kDnsOverHttpsFallbackParam.Get()) {
-      secure_dns_mode = net::SecureDnsMode::kAutomatic;
-    } else {
-      secure_dns_mode = net::SecureDnsMode::kSecure;
-    }
-    default_doh_templates = features::kDnsOverHttpsTemplatesParam.Get();
-  }
-
   net::DnsOverHttpsConfig doh_config;
   if (!default_doh_templates.empty() &&
       secure_dns_mode != net::SecureDnsMode::kOff) {

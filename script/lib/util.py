@@ -158,7 +158,7 @@ def azput(prefix, key_prefix, files):
   print(output)
 
 def get_out_dir():
-  out_dir = 'Debug'
+  out_dir = 'Default'
   override = os.environ.get('ELECTRON_OUT_DIR')
   if override is not None:
     out_dir = override
@@ -191,7 +191,10 @@ def get_buildtools_executable(name):
     'win32': 'win',
     'cygwin': 'win',
   }[sys.platform]
-  path = os.path.join(buildtools, chromium_platform, name)
+  if name == 'clang-format':
+    path = os.path.join(buildtools, chromium_platform, 'format', name)  
+  else:
+    path = os.path.join(buildtools, chromium_platform, name)
   if sys.platform == 'win32':
     path += '.exe'
   return path

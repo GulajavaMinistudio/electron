@@ -83,16 +83,6 @@ gin::IsolateHolder CreateIsolateHolder(v8::Isolate* isolate) {
   // Align behavior with V8 Isolate default for Node.js.
   // This is necessary for important aspects of Node.js
   // including heap and cpu profilers to function properly.
-  //
-  // Additional note:
-  // We do not want to invoke a termination exception at exit when
-  // we're running with only_terminate_in_safe_scope set to false. Heap and
-  // coverage profilers run after environment exit and if there is a pending
-  // exception at this stage then they will fail to generate the appropriate
-  // profiles. Node.js does not call node::Stop(), which calls
-  // isolate->TerminateExecution(), and therefore does not have this issue
-  // when also running with only_terminate_in_safe_scope set to false.
-  create_params->only_terminate_in_safe_scope = false;
 
   return gin::IsolateHolder(
       base::SingleThreadTaskRunner::GetCurrentDefault(),
@@ -134,13 +124,10 @@ JavascriptEnvironment::~JavascriptEnvironment() {
 v8::Isolate* JavascriptEnvironment::Initialize(uv_loop_t* event_loop,
                                                bool setup_wasm_streaming) {
   auto* cmd = base::CommandLine::ForCurrentProcess();
-
   // --js-flags.
-  std::string js_flags =
-      cmd->GetSwitchValueASCII(blink::switches::kJavaScriptFlags);
-  js_flags.append(" --no-freeze-flags-after-init");
-  if (!js_flags.empty())
-    v8::V8::SetFlagsFromString(js_flags.c_str(), js_flags.size());
+  std::string js_flags = "--no-freeze-flags-after-init ";
+  js_flags.append(cmd->GetSwitchValueASCII(blink::switches::kJavaScriptFlags));
+  v8::V8::SetFlagsFromString(js_flags.c_str(), js_flags.size());
 
   // The V8Platform of gin relies on Chromium's task schedule, which has not
   // been started at this point, so we have to rely on Node's V8Platform.
