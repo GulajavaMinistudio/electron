@@ -34,23 +34,29 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-  AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-  AZURE_STORAGE_CONTAINER_NAME: ${{ secrets.AZURE_STORAGE_CONTAINER_NAME }}
+  AZURE_AKS_CACHE_STORAGE_ACCOUNT: ${{ secrets.AZURE_AKS_CACHE_STORAGE_ACCOUNT }}
+  AZURE_AKS_CACHE_SHARE_NAME: ${{ secrets.AZURE_AKS_CACHE_SHARE_NAME }}
   ELECTRON_ARTIFACTS_BLOB_STORAGE: ${{ secrets.ELECTRON_ARTIFACTS_BLOB_STORAGE }}
   ELECTRON_RBE_JWT: ${{ secrets.ELECTRON_RBE_JWT }}
   ELECTRON_GITHUB_TOKEN: ${{ secrets.ELECTRON_GITHUB_TOKEN }}
   GN_CONFIG: ${{ inputs.gn-config }}
   # Disable pre-compiled headers to reduce out size - only useful for rebuilds
-  GN_BUILDFLAG_ARGS: 'enable_precompiled_headers = false'
+  GN_BUILDFLAG_ARGS: 'enable_precompiled_headers=false'
   GCLIENT_EXTRA_ARGS: '--custom-var=checkout_mac=True --custom-var=host_os=mac'
-  CHECK_DIST_MANIFEST: '1'
+  # Only disable this in the Asan build
+  CHECK_DIST_MANIFEST: true
   IS_GHA_RELEASE: true
   ELECTRON_OUT_DIR: Default
 
 jobs:
   checkout:
-    runs-on: LargeLinuxRunner
+    runs-on: aks-linux-large
+    container:
+      image: ghcr.io/electron/build:latest
+      options: --user root
+      volumes:
+        - /mnt/cross-instance-cache:/mnt/cross-instance-cache
+        - /var/run/sas:/var/run/sas
     steps:
     - name: Checkout Electron
       uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
@@ -60,12 +66,6 @@ jobs:
     - name: Set GIT_CACHE_PATH to make gclient to use the cache
       run: |
         echo "GIT_CACHE_PATH=$(pwd)/git-cache" >> $GITHUB_ENV
-    - name: Setup Node.js/npm
-      uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8
-      with:
-        node-version: 20.11.x
-        cache: yarn
-        cache-dependency-path: src/electron/yarn.lock
     - name: Install Dependencies
       run: |
         cd src/electron
@@ -74,15 +74,12 @@ jobs:
       timeout-minutes: 5
       run: |
         git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        if [ "`uname`" == "Darwin" ]; then
-          # remove ninjalog_uploader_wrapper.py from autoninja since we don't use it and it causes problems
-          sed -i '' '/ninjalog_uploader_wrapper.py/d' ./depot_tools/autoninja
-        else
-          sed -i '/ninjalog_uploader_wrapper.py/d' ./depot_tools/autoninja
-          # Remove swift-format dep from cipd on macOS until we send a patch upstream.
-          cd depot_tools
-          git apply --3way ../src/electron/.github/workflows/config/gclient.diff
-        fi
+
+        sed -i '/ninjalog_uploader_wrapper.py/d' ./depot_tools/autoninja
+        # Remove swift-format dep from cipd on macOS until we send a patch upstream.
+        cd depot_tools
+        git apply --3way ../src/electron/.github/workflows/config/gclient.diff
+
         # Ensure depot_tools does not update.
         test -d depot_tools && cd depot_tools
         touch .disable_auto_update
@@ -92,22 +89,27 @@ jobs:
       run: |
         node src/electron/script/generate-deps-hash.js && cat src/electron/.depshash-target
         echo "DEPSHASH=v1-src-cache-$(shasum src/electron/.depshash | cut -f1 -d' ')" >> $GITHUB_ENV
+    - name: Generate SAS Key
+      run: |
+        curl --unix-socket /var/run/sas/sas.sock --fail "http://foo/$DEPSHASH.tar" > sas-token
+    - name: Save SAS Key
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          sas-token
+        key: sas-key-${{ github.run_number }}-${{ github.run_attempt }}
     - name: Check If Cache Exists
       id: check-cache
       run: |
-        exists_json=$(az storage blob exists \
-          --account-name $AZURE_STORAGE_ACCOUNT \
-          --account-key $AZURE_STORAGE_KEY \
-          --container-name $AZURE_STORAGE_CONTAINER_NAME \
-          --name $DEPSHASH)
-
-        cache_exists=$(echo $exists_json | jq -r '.exists')
-        echo "cache_exists=$cache_exists" >> $GITHUB_OUTPUT
-
-        if (test "$cache_exists" = "true"); then
-          echo "Cache Exists for $DEPSHASH"
-        else
+        cache_path=/mnt/cross-instance-cache/$DEPSHASH.tar
+        echo "Using cache key: $DEPSHASH"
+        echo "Checking for cache in: $cache_path"
+        if [ ! -f "$cache_path" ]; then
+          echo "cache_exists=false" >> $GITHUB_OUTPUT
           echo "Cache Does Not Exist for $DEPSHASH"
+        else
+          echo "cache_exists=true" >> $GITHUB_OUTPUT
+          echo "Cache Already Exists for $DEPSHASH, Skipping.."
         fi
     - name: Gclient Sync
       if: steps.check-cache.outputs.cache_exists == 'false'
@@ -119,7 +121,7 @@ jobs:
           "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
 
         ELECTRON_USE_THREE_WAY_MERGE_FOR_PATCHES=1 gclient sync --with_branch_heads --with_tags -vvvvv
-        if [ ${{ inputs.is-release != true }}]; then
+        if [ "${{ inputs.is-release }}" != "true" ]; then
           # Re-export all the patches to check if there were changes.
           python3 src/electron/script/export_all_patches.py src/electron/patches/config.json
           cd src/electron
@@ -177,18 +179,21 @@ jobs:
       if: steps.check-cache.outputs.cache_exists == 'false'
       run: |
         echo "Uncompressed src size: $(du -sh src | cut -f1 -d' ')"
-        tar -cvf $DEPSHASH.tar src
+        tar -cf $DEPSHASH.tar src
         echo "Compressed src to $(du -sh $DEPSHASH.tar | cut -f1 -d' ')"
-    - name: Upload Compressed Src Cache to Azure
+        cp ./$DEPSHASH.tar /mnt/cross-instance-cache/
+    - name: Persist Src Cache
       if: steps.check-cache.outputs.cache_exists == 'false'
       run: |
-        az storage blob upload \
-          --account-name $AZURE_STORAGE_ACCOUNT \
-          --account-key $AZURE_STORAGE_KEY \
-          --container-name $AZURE_STORAGE_CONTAINER_NAME \
-          --file $DEPSHASH.tar \
-          --name $DEPSHASH \
-          --debug
+        final_cache_path=/mnt/cross-instance-cache/$DEPSHASH.tar
+        echo "Using cache key: $DEPSHASH"
+        echo "Checking path: $final_cache_path"
+        if [ ! -f "$final_cache_path" ]; then
+          echo "Cache key not found"
+          exit 1
+        else
+          echo "Cache key persisted in $final_cache_path"
+        fi
   build:
     strategy:
       fail-fast: false
@@ -198,14 +203,15 @@ jobs:
     # More runner information: https://github.com/actions/runner-images/blob/main/README.md#available-images
     runs-on: macos-14-xlarge
     needs: checkout
+    env:
+      TARGET_ARCH: ${{ matrix.build-arch }}
     steps:
     - name: Load Build Tools
       run: |
-        export BUILD_TOOLS_SHA=2bb63e2e7877491b52f972532b52adc979a6ec2f
+        export BUILD_TOOLS_SHA=ef894bc3cfa99d84a3b731252da0f83f500e4032
         npm i -g @electron/build-tools
         e auto-update disable
         e init --root=$(pwd) --out=Default ${{ inputs.gn-build-type }} --import ${{ inputs.gn-build-type }} --target-cpu ${{ matrix.build-arch }}
-        e use ${{ inputs.gn-build-type }}
     - name: Checkout Electron
       uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
       with:
@@ -221,24 +227,19 @@ jobs:
       run: |
         cd src/electron
         node script/yarn install
+        brew install azcopy
     - name: Load Target Arch & CPU
       run: |
-        echo "TARGET_ARCH=${{ matrix.build-arch }}" >> $GITHUB_ENV
         echo "target_cpu=${{ matrix.build-arch }}" >> $GITHUB_ENV
         echo "host_cpu=${{ matrix.build-arch }}" >> $GITHUB_ENV
     - name: Get Depot Tools
       timeout-minutes: 5
       run: |
         git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        if [ "`uname`" == "Darwin" ]; then
-          # remove ninjalog_uploader_wrapper.py from autoninja since we don't use it and it causes problems
-          sed -i '' '/ninjalog_uploader_wrapper.py/d' ./depot_tools/autoninja
-        else
-          sed -i '/ninjalog_uploader_wrapper.py/d' ./depot_tools/autoninja
-          # Remove swift-format dep from cipd on macOS until we send a patch upstream.
-          cd depot_tools
-          git apply --3way ../src/electron/.github/workflows/config/gclient.diff
-        fi
+
+        # remove ninjalog_uploader_wrapper.py from autoninja since we don't use it and it causes problems
+        sed -i '' '/ninjalog_uploader_wrapper.py/d' ./depot_tools/autoninja
+
         # Ensure depot_tools does not update.
         test -d depot_tools && cd depot_tools
         touch .disable_auto_update
@@ -247,8 +248,16 @@ jobs:
     - name: Generate DEPS Hash
       run: |
         node src/electron/script/generate-deps-hash.js && cat src/electron/.depshash-target
-        echo "DEPSHASH=v1-src-cache-$(shasum src/electron/.depshash | cut -f1 -d' ')" >> $GITHUB_ENV
-    - name: Download Src Cache
+        DEPSHASH=v1-src-cache-$(shasum src/electron/.depshash | cut -f1 -d' ')
+        echo "DEPSHASH=$DEPSHASH" >> $GITHUB_ENV
+        echo "CACHE_PATH=$DEPSHASH.tar" >> $GITHUB_ENV
+    - name: Obtain SAS Key
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          sas-token
+        key: sas-key-${{ github.run_number }}-${{ github.run_attempt }}
+    - name: Download Src Cache from AKS
       # The cache will always exist here as a result of the checkout job
       # Either it was uploaded to Azure in the checkout job for this commit
       # or it was uploaded in the checkout job for a previous commit.
@@ -258,17 +267,16 @@ jobs:
         max_attempts: 3
         retry_on: error
         command: |
-          az storage blob download \
-            --account-name $AZURE_STORAGE_ACCOUNT \
-            --account-key $AZURE_STORAGE_KEY \
-            --container-name $AZURE_STORAGE_CONTAINER_NAME \
-            --name $DEPSHASH \
-            --file $DEPSHASH.tar \
+          sas_token=$(cat sas-token)
+          azcopy copy \
+            "https://${{ env.AZURE_AKS_CACHE_STORAGE_ACCOUNT }}.file.core.windows.net/${{ env.AZURE_AKS_CACHE_SHARE_NAME }}/${{ env.CACHE_PATH }}?$sas_token" $DEPSHASH.tar
+    - name: Clean SAS Key
+      run: rm -f sas-token
     - name: Unzip and Ensure Src Cache
       run: |
         echo "Downloaded cache is $(du -sh $DEPSHASH.tar | cut -f1)"
         mkdir temp-cache
-        tar -xvf $DEPSHASH.tar -C temp-cache
+        tar -xf $DEPSHASH.tar -C temp-cache
         echo "Unzipped cache is $(du -sh temp-cache/src | cut -f1)"
 
         if [ -d "temp-cache/src" ]; then
@@ -294,7 +302,6 @@ jobs:
         fetch-depth: 0
     - name: Run Electron Only Hooks
       run: |
-        echo "Running Electron Only Hooks"
         gclient runhooks --spec="solutions=[{'name':'src/electron','url':None,'deps_file':'DEPS','custom_vars':{'process_deps':False},'managed':False}]"
     - name: Regenerate DEPS Hash
       run: |
@@ -337,7 +344,7 @@ jobs:
         cipd ensure --root src/buildtools/reclient -ensure-file gn_ensure_file
         python3 src/buildtools/reclient_cfgs/configure_reclient_cfgs.py --rbe_instance "projects/rbe-chrome-untrusted/instances/default_instance" --reproxy_cfg_template reproxy.cfg.template --rewrapper_cfg_project "" --skip_remoteexec_cfg_fetch
 
-        if  [ "$TARGET_ARCH" == "arm64" ]; then
+        if  [ "${{ env.TARGET_ARCH }}" == "arm64" ]; then
           DSYM_SHA_FILE=src/tools/clang/dsymutil/bin/dsymutil.arm64.sha1
         else
           DSYM_SHA_FILE=src/tools/clang/dsymutil/bin/dsymutil.x64.sha1
@@ -470,7 +477,7 @@ jobs:
       run: |
         cd src
         e build electron:electron_dist_zip -j $NUMBER_OF_NINJA_PROCESSES
-        if [ "$CHECK_DIST_MANIFEST" == "1" ]; then
+        if [ "${{ env.CHECK_DIST_MANIFEST }}" == "true" ]; then
           target_os=mac
           electron/script/zip_manifests/check-zip-manifest.py out/Default/dist.zip electron/script/zip_manifests/dist_zip.$target_os.${{ env.TARGET_ARCH }}.manifest
         fi
@@ -495,14 +502,14 @@ jobs:
     - name: Generate & Zip Symbols (darwin)
       run: |
         # Generate breakpad symbols on release builds
-        if [ ${{ inputs.generate-symbols }} ]; then
+        if [ "${{ inputs.generate-symbols }}" == "true" ]; then
           e build electron:electron_symbols
         fi
         cd src
         export BUILD_PATH="$(pwd)/out/Default"
         e build electron:licenses
         e build electron:electron_version_file
-        if [ ${{ inputs.is-release }} ]; then
+        if [ "${{ inputs.is-release }}" == "true" ]; then
           DELETE_DSYMS_AFTER_ZIP=1 electron/script/zip-symbols.py -b $BUILD_PATH
         else
           electron/script/zip-symbols.py -b $BUILD_PATH
@@ -529,7 +536,7 @@ jobs:
       run: |
         rm -rf src/out/Default/obj
         cd src/electron
-        if [ ${{ inputs.upload-to-storage == '1' }} ]; then
+        if [ "${{ inputs.upload-to-storage }}" == "1" ]; then
           echo 'Uploading Electron release distribution to Azure'
           script/release/uploaders/upload.py --verbose --upload_to_storage
         else
@@ -545,31 +552,11 @@ jobs:
       with:
         name: generated_artifacts_darwin_${{ env.TARGET_ARCH }}
         path: ./generated_artifacts_darwin_${{ env.TARGET_ARCH }}
-    - name: Persist Build Artifacts
-      uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
-      with:
-        path: |
-          src/out/Default/gen/node_headers
-          src/out/Default/overlapped-checker
-          src/electron
-          src/third_party/electron_node
-          src/third_party/nan
-          src/cross-arch-snapshots
-          src/third_party/llvm-build
-          src/build/linux
-          src/buildtools/mac
-          src/buildtools/third_party/libc++
-          src/buildtools/third_party/libc++abi
-          src/third_party/libc++
-          src/third_party/libc++abi
-          src/out/Default/obj/buildtools/third_party
-          src/v8/tools/builtins-pgo
-        key: ${{ runner.os }}-build-artifacts-darwin-${{ env.TARGET_ARCH }}-${{ github.sha }}
-    - name: Create MAS Config
+    - name: Set GN_EXTRA_ARGS for MAS Build
       run: |
-        mv src/electron/.github/workflows/config/${{ inputs.gn-build-type }}/${{ matrix.build-arch }}/evm.mas.json $HOME/.electron_build_tools/configs/evm.mas.json
         echo "MAS_BUILD=true" >> $GITHUB_ENV
-        e use mas
+        GN_EXTRA_ARGS='is_mas_build=true'
+        echo "GN_EXTRA_ARGS=$GN_EXTRA_ARGS" >> $GITHUB_ENV
     - name: Build Electron (mas)
       run: |
         rm -rf "src/out/Default/Electron Framework.framework"
@@ -589,7 +576,7 @@ jobs:
       run: |
         cd src
         e build electron:electron_dist_zip -j $NUMBER_OF_NINJA_PROCESSES
-        if [ "$CHECK_DIST_MANIFEST" == "1" ]; then
+        if [ "${{ env.CHECK_DIST_MANIFEST }}" == "true" ]; then
           target_os=mac_mas
           electron/script/zip_manifests/check-zip-manifest.py out/Default/dist.zip electron/script/zip_manifests/dist_zip.$target_os.${{ env.TARGET_ARCH }}.manifest
         fi
@@ -616,14 +603,14 @@ jobs:
         e build electron:node_headers
     - name: Generate & Zip Symbols (mas)
       run: |
-        if [ ${{ inputs.generate-symbols }} ]; then
+        if [ "${{ inputs.generate-symbols }}" == "true" ]; then
           e build electron:electron_symbols
         fi
         cd src
         export BUILD_PATH="$(pwd)/out/Default"
         e build electron:licenses
         e build electron:electron_version_file
-        if [ ${{ inputs.is-release }}]; then
+        if [ "${{ inputs.is-release }}" == "true" ]; then
           DELETE_DSYMS_AFTER_ZIP=1 electron/script/zip-symbols.py -b $BUILD_PATH
         else
           electron/script/zip-symbols.py -b $BUILD_PATH
@@ -640,7 +627,7 @@ jobs:
       run: |
         rm -rf src/out/Default/obj
         cd src/electron
-        if [ ${{ inputs.upload-to-storage == '1' }} ]; then
+        if [ "${{ inputs.upload-to-storage }}" == "1" ]; then
           echo 'Uploading Electron release distribution to Azure'
           script/release/uploaders/upload.py --verbose --upload_to_storage
         else
@@ -654,28 +641,6 @@ jobs:
       with:
         name: generated_artifacts_mas_${{ env.TARGET_ARCH }}
         path: ./generated_artifacts_mas_${{ env.TARGET_ARCH }}
-    - name: Persist Build Artifacts
-      uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
-      with:
-        path: |
-          src/out/Default/gen/node_headers
-          src/out/Default/overlapped-checker
-          src/out/Default/ffmpeg
-          src/out/Default/hunspell_dictionaries
-          src/electron
-          src/third_party/electron_node
-          src/third_party/nan
-          src/cross-arch-snapshots
-          src/third_party/llvm-build
-          src/build/linux
-          src/buildtools/mac
-          src/buildtools/third_party/libc++
-          src/buildtools/third_party/libc++abi
-          src/third_party/libc++
-          src/third_party/libc++abi
-          src/out/Default/obj/buildtools/third_party
-          src/v8/tools/builtins-pgo
-        key: ${{ runner.os }}-build-artifacts-mas-${{ env.TARGET_ARCH }}-${{ github.sha }}
   test:
     if: ${{ inputs.is-release == false }}
     runs-on: macos-14-xlarge
@@ -684,26 +649,22 @@ jobs:
       fail-fast: false
       matrix:
         build-type: [ darwin, mas ]
+        target-arch: [ x64, arm64 ]
     env:
       BUILD_TYPE: ${{ matrix.build-type }}
+      TARGET_ARCH: ${{ matrix.target-arch }}
     steps:
     - name: Load Build Tools
       run: |
-        export BUILD_TOOLS_SHA=2bb63e2e7877491b52f972532b52adc979a6ec2f
+        export BUILD_TOOLS_SHA=ef894bc3cfa99d84a3b731252da0f83f500e4032
         npm i -g @electron/build-tools
         e auto-update disable
-        e init --root=$(pwd) --out=Default ${{ inputs.gn-build-type }}
+        e init --root=$(pwd) --out=Default ${{ inputs.gn-build-type }} --import ${{ inputs.gn-build-type }} --target-cpu ${{ matrix.target-arch }}
     - name: Checkout Electron
       uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
       with:
         path: src/electron
         fetch-depth: 0
-    - name: Setup Node.js/npm
-      uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8
-      with:
-        node-version: 20.11.x
-        cache: yarn
-        cache-dependency-path: src/electron/yarn.lock
     - name: Install Dependencies
       run: |
         cd src/electron
@@ -729,28 +690,8 @@ jobs:
     - name: Download Generated Artifacts
       uses: actions/download-artifact@65a9edc5881444af0b9093a5e628f2fe47ea3b2e
       with:
-        name: generated_artifacts_${{ matrix.build-type }}
-        path: ./generated_artifacts_${{ matrix.build-type }}
-    - name: Restore Persisted Build Artifacts
-      uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
-      with:
-        path: |
-          src/out/Default/gen/node_headers
-          src/out/Default/overlapped-checker
-          src/electron
-          src/third_party/electron_node
-          src/third_party/nan
-          src/cross-arch-snapshots
-          src/third_party/llvm-build
-          src/build/linux
-          src/buildtools/mac
-          src/buildtools/third_party/libc++
-          src/buildtools/third_party/libc++abi
-          src/third_party/libc++
-          src/third_party/libc++abi
-          src/out/Default/obj/buildtools/third_party
-          src/v8/tools/builtins-pgo
-        key: ${{ runner.os }}-build-artifacts-${{ matrix.build-type }}-${{ github.sha }}
+        name: generated_artifacts_${{ matrix.build-type }}_${{ matrix.target-arch }}
+        path: ./generated_artifacts_${{ matrix.build-type }}_${{ matrix.target-arch }}
     - name: Restore Generated Artifacts
       run: ./src/electron/script/actions/restore-artifacts.sh
     - name: Unzip Dist, Mksnapshot & Chromedriver
