@@ -8,16 +8,27 @@ if [ "`uname`" == "Darwin" ]; then
   fi
 elif [ "`uname`" == "Linux" ]; then
   BUILD_TYPE="linux"
+else
+  echo "Unsupported platform"
+  exit 1
 fi
 
-echo Creating generated_artifacts_${BUILD_TYPE}_${TARGET_ARCH}...
-rm -rf generated_artifacts_${BUILD_TYPE}_${TARGET_ARCH}
-mkdir generated_artifacts_${BUILD_TYPE}_${TARGET_ARCH}
+GENERATED_ARTIFACTS="generated_artifacts_${BUILD_TYPE}_${TARGET_ARCH}"
+
+echo Creating $GENERATED_ARTIFACTS...
+rm -rf $GENERATED_ARTIFACTS
+mkdir $GENERATED_ARTIFACTS
+
+SRC_ARTIFACTS="src_artifacts_${BUILD_TYPE}_${TARGET_ARCH}"
+
+echo Creating $SRC_ARTIFACTS...
+rm -rf $SRC_ARTIFACTS
+mkdir $SRC_ARTIFACTS
 
 mv_if_exist() {
   if [ -f "$1" ] || [ -d "$1" ]; then
     echo Storing $1
-    mv $1 generated_artifacts_${BUILD_TYPE}_${TARGET_ARCH}
+    mv $1 $GENERATED_ARTIFACTS
   else
     echo Skipping $1 - It is not present on disk
   fi
@@ -26,21 +37,20 @@ mv_if_exist() {
 cp_if_exist() {
   if [ -f "$1" ] || [ -d "$1" ]; then
     echo Storing $1
-    cp $1 generated_artifacts_${BUILD_TYPE}_${TARGET_ARCH}
+    cp $1 $GENERATED_ARTIFACTS
   else
     echo Skipping $1 - It is not present on disk
   fi
 }
 
-tar_src_dirs_if_exist() {
-  mkdir build_artifacts
+move_src_dirs_if_exist() {
+  mkdir src_artifacts
 
   for dir in \
     src/out/Default/gen/node_headers \
     src/out/Default/overlapped-checker \
     src/out/Default/ffmpeg \
     src/out/Default/hunspell_dictionaries \
-    src/electron \
     src/third_party/electron_node \
     src/third_party/nan \
     src/cross-arch-snapshots \
@@ -55,14 +65,15 @@ tar_src_dirs_if_exist() {
     src/v8/tools/builtins-pgo
   do
     if [ -d "$dir" ]; then
-      mkdir -p build_artifacts/$dir
-      cp -r $dir build_artifacts/$dir
+      mkdir -p src_artifacts/$(dirname $dir)
+      cp -r $dir/ src_artifacts/$dir
     fi      
   done
 
-  tar -cf build_artifacts.tarbuild_artifacts
+  tar -C src_artifacts -cf src_artifacts.tar ./
 
-  mv_if_exist build_artifacts.tar
+  echo Storing src_artifacts.tar
+  mv src_artifacts.tar $SRC_ARTIFACTS
 }
 
 # Generated Artifacts
@@ -77,4 +88,4 @@ mv_if_exist src/cross-arch-snapshots
 cp_if_exist src/out/electron_ninja_log
 cp_if_exist src/out/Default/.ninja_log
 
-tar_src_dirs_if_exist
+move_src_dirs_if_exist
