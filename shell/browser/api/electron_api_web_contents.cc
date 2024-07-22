@@ -22,7 +22,6 @@
 #include "base/no_destructor.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/current_thread.h"
-#include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -3619,9 +3618,8 @@ std::vector<base::FilePath> WebContents::GetPreloadPaths() const {
   auto result = SessionPreferences::GetValidPreloads(GetBrowserContext());
 
   if (auto* web_preferences = WebContentsPreferences::From(web_contents())) {
-    base::FilePath preload;
-    if (web_preferences->GetPreloadPath(&preload)) {
-      result.emplace_back(preload);
+    if (auto preload = web_preferences->GetPreloadPath()) {
+      result.emplace_back(*preload);
     }
   }
 

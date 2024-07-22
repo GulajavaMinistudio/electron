@@ -16,15 +16,11 @@
 #include "base/debug/crash_logging.h"
 #include "base/environment.h"
 #include "base/files/file_util.h"
-#include "base/json/json_reader.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
-#include "base/stl_util.h"
 #include "base/strings/escape.h"
-#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -829,13 +825,7 @@ ElectronBrowserClient::GetSystemNetworkContext() {
 
 std::unique_ptr<content::BrowserMainParts>
 ElectronBrowserClient::CreateBrowserMainParts(bool /* is_integration_test */) {
-  auto browser_main_parts = std::make_unique<ElectronBrowserMainParts>();
-
-#if BUILDFLAG(IS_MAC)
-  browser_main_parts_ = browser_main_parts.get();
-#endif
-
-  return browser_main_parts;
+  return std::make_unique<ElectronBrowserMainParts>();
 }
 
 void ElectronBrowserClient::WebNotificationAllowed(
