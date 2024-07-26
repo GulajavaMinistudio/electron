@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "build/build_config.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/kiosk/kiosk_delegate.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -93,7 +92,8 @@ class ElectronExtensionsBrowserClient
       bool is_incognito,
       const extensions::Extension* extension,
       const extensions::ExtensionSet& extensions,
-      const extensions::ProcessMap& process_map) override;
+      const extensions::ProcessMap& process_map,
+      const GURL& upstream_url) override;
   PrefService* GetPrefServiceForContext(
       content::BrowserContext* context) override;
   void GetEarlyExtensionPrefsObservers(

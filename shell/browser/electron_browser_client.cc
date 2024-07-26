@@ -18,6 +18,7 @@
 #include "base/files/file_util.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
+#include "base/process/process_metrics.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -73,7 +74,6 @@
 #include "shell/browser/api/electron_api_app.h"
 #include "shell/browser/api/electron_api_crash_reporter.h"
 #include "shell/browser/api/electron_api_protocol.h"
-#include "shell/browser/api/electron_api_session.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/api/electron_api_web_request.h"
 #include "shell/browser/badging/badge_manager.h"
@@ -87,6 +87,7 @@
 #include "shell/browser/electron_web_contents_utility_handler_impl.h"
 #include "shell/browser/font_defaults.h"
 #include "shell/browser/javascript_environment.h"
+#include "shell/browser/login_handler.h"
 #include "shell/browser/media/media_capture_devices_dispatcher.h"
 #include "shell/browser/native_window.h"
 #include "shell/browser/net/network_context_service.h"
@@ -613,6 +614,7 @@ void ElectronBrowserClient::AllowCertificateError(
 
 base::OnceClosure ElectronBrowserClient::SelectClientCertificate(
     content::BrowserContext* browser_context,
+    int process_id,
     content::WebContents* web_contents,
     net::SSLCertRequestInfo* cert_request_info,
     net::ClientCertIdentityList client_certs,
@@ -621,7 +623,7 @@ base::OnceClosure ElectronBrowserClient::SelectClientCertificate(
     delegate->ContinueWithCertificate(nullptr, nullptr);
   } else if (delegate_) {
     delegate_->SelectClientCertificate(
-        browser_context, web_contents, cert_request_info,
+        browser_context, process_id, web_contents, cert_request_info,
         std::move(client_certs), std::move(delegate));
   }
 
@@ -1356,6 +1358,7 @@ ElectronBrowserClient::WillCreateURLLoaderRequestInterceptors(
     content::NavigationUIData* navigation_ui_data,
     int frame_tree_node_id,
     int64_t navigation_id,
+    bool force_no_https_upgrade,
     scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner) {
   std::vector<std::unique_ptr<content::URLLoaderRequestInterceptor>>
       interceptors;

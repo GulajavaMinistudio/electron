@@ -9,11 +9,13 @@
 
 #include "base/base64.h"
 #include "base/containers/contains.h"
+#include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "content/public/browser/device_service.h"
 #include "content/public/browser/web_contents.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "shell/browser/api/electron_api_session.h"
+#include "shell/browser/electron_browser_context.h"
 #include "shell/browser/electron_permission_manager.h"
 #include "shell/browser/web_contents_permission_helper.h"
 #include "shell/common/gin_converters/frame_converter.h"
