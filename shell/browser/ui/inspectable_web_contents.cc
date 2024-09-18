@@ -14,7 +14,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/pattern.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -42,6 +41,7 @@
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/cpp/simple_url_loader_stream_consumer.h"
 #include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "shell/browser/api/electron_api_web_contents.h"
 #include "shell/browser/native_window_views.h"
 #include "shell/browser/net/asar/asar_url_loader_factory.h"
@@ -784,6 +784,7 @@ void InspectableWebContents::SetEyeDropperActive(bool active) {
   if (delegate_)
     delegate_->DevToolsSetEyeDropperActive(active);
 }
+
 void InspectableWebContents::ZoomIn() {
   double new_level = GetNextZoomLevel(GetDevToolsZoomLevel(), false);
   SetZoomLevelForWebContents(GetDevToolsWebContents(), new_level);
@@ -965,6 +966,13 @@ void InspectableWebContents::CloseContents(content::WebContents* source) {
   CloseDevTools();
 }
 
+std::unique_ptr<content::EyeDropper> InspectableWebContents::OpenEyeDropper(
+    content::RenderFrameHost* frame,
+    content::EyeDropperListener* listener) {
+  auto* delegate = web_contents_->GetDelegate();
+  return delegate ? delegate->OpenEyeDropper(frame, listener) : nullptr;
+}
+
 void InspectableWebContents::RunFileChooser(
     content::RenderFrameHost* render_frame_host,
     scoped_refptr<content::FileSelectListener> listener,
@@ -1029,7 +1037,8 @@ void InspectableWebContents::DidFinishNavigation(
   // Invoking content::DevToolsFrontendHost::SetupExtensionsAPI(frame, script);
   // should be enough, but it seems to be a noop currently.
   frame->ExecuteJavaScriptForTests(base::UTF8ToUTF16(script),
-                                   base::NullCallback());
+                                   base::NullCallback(),
+                                   content::ISOLATED_WORLD_ID_GLOBAL);
 }
 
 void InspectableWebContents::SendMessageAck(int request_id,
