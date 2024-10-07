@@ -7,10 +7,10 @@ This patch comes after Chromium removed the ScopedAllowIO API in favor
 of explicitly adding ScopedAllowBlocking calls as friends.
 
 diff --git a/base/threading/thread_restrictions.h b/base/threading/thread_restrictions.h
-index b40103dc69aa8b6e17a48bc5cc0389592986cca2..4687d607ab791f51323c9879e22e1989efda98e8 100644
+index 965206e18e7a536947354c734ef17196c3e736ff..8a8a687d33f725aacf736a20ffc600cdf3fb05e4 100644
 --- a/base/threading/thread_restrictions.h
 +++ b/base/threading/thread_restrictions.h
-@@ -136,6 +136,7 @@ class KeyStorageLinux;
+@@ -132,6 +132,7 @@ class KeyStorageLinux;
  class NativeBackendKWallet;
  class NativeDesktopMediaList;
  class PartnerBookmarksReader;
@@ -18,7 +18,7 @@ index b40103dc69aa8b6e17a48bc5cc0389592986cca2..4687d607ab791f51323c9879e22e1989
  class Profile;
  class ProfileImpl;
  class ScopedAllowBlockingForProfile;
-@@ -286,6 +287,9 @@ class BackendImpl;
+@@ -283,6 +284,9 @@ class BackendImpl;
  class InFlightIO;
  bool CleanupDirectorySync(const base::FilePath&);
  }  // namespace disk_cache
@@ -28,7 +28,7 @@ index b40103dc69aa8b6e17a48bc5cc0389592986cca2..4687d607ab791f51323c9879e22e1989
  namespace enterprise_connectors {
  class LinuxKeyRotationCommand;
  }  // namespace enterprise_connectors
-@@ -593,6 +597,7 @@ class BASE_EXPORT [[maybe_unused, nodiscard]] ScopedAllowBlocking {
+@@ -580,6 +584,7 @@ class BASE_EXPORT ScopedAllowBlocking {
    friend class ::DesktopNotificationBalloon;
    friend class ::FirefoxProfileLock;
    friend class ::GaiaConfig;
@@ -36,7 +36,7 @@ index b40103dc69aa8b6e17a48bc5cc0389592986cca2..4687d607ab791f51323c9879e22e1989
    friend class ::ProfileImpl;
    friend class ::ScopedAllowBlockingForProfile;
    friend class ::StartupTabProviderImpl;
-@@ -633,6 +638,7 @@ class BASE_EXPORT [[maybe_unused, nodiscard]] ScopedAllowBlocking {
+@@ -620,6 +625,7 @@ class BASE_EXPORT ScopedAllowBlocking {
    friend class crosapi::LacrosThreadTypeDelegate;
    friend class crypto::ScopedAllowBlockingForNSS;  // http://crbug.com/59847
    friend class drive::FakeDriveService;

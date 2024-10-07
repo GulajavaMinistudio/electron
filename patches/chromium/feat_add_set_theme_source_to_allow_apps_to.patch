@@ -13,10 +13,10 @@ uses internally for things like menus and devtools.
 We can remove this patch once it has in some shape been upstreamed.
 
 diff --git a/ui/native_theme/native_theme.cc b/ui/native_theme/native_theme.cc
-index 9d108fe375fa68811c5aba9b2d3b5622b7293b49..3080f77e125e1792f37b402ceeb3dbf730af45eb 100644
+index 09aeff0a2303ab5e3629677585c8bbb9313acc1f..c28593e409784e8de770eec4cb9b4e30e6de0dbf 100644
 --- a/ui/native_theme/native_theme.cc
 +++ b/ui/native_theme/native_theme.cc
-@@ -209,6 +209,8 @@ NativeTheme::NativeTheme(bool should_use_dark_colors,
+@@ -208,6 +208,8 @@ NativeTheme::NativeTheme(bool should_use_dark_colors,
  NativeTheme::~NativeTheme() = default;
  
  bool NativeTheme::ShouldUseDarkColors() const {
@@ -26,10 +26,10 @@ index 9d108fe375fa68811c5aba9b2d3b5622b7293b49..3080f77e125e1792f37b402ceeb3dbf7
  }
  
 diff --git a/ui/native_theme/native_theme.h b/ui/native_theme/native_theme.h
-index 0ba23d2d8ea58024b48d1dd3b0a411bc53d6e26e..128cb008aeef4a75ef1569a37a308e295408f77c 100644
+index c8e200ba27bd5e9307469ea8fb4e3f8e8466877d..7add0446eaa276bbfbbb7bf4eb90f8b6684da61d 100644
 --- a/ui/native_theme/native_theme.h
 +++ b/ui/native_theme/native_theme.h
-@@ -449,6 +449,23 @@ class NATIVE_THEME_EXPORT NativeTheme {
+@@ -445,6 +445,23 @@ class NATIVE_THEME_EXPORT NativeTheme {
        scoped_refptr<ColorProviderKey::ThemeInitializerSupplier> custom_theme,
        bool use_custom_frame = true) const;
  
@@ -53,7 +53,7 @@ index 0ba23d2d8ea58024b48d1dd3b0a411bc53d6e26e..128cb008aeef4a75ef1569a37a308e29
    // Returns a shared instance of the native theme that should be used for web
    // rendering. Do not use it in a normal application context (i.e. browser).
    // The returned object should not be deleted by the caller. This function is
-@@ -677,6 +694,7 @@ class NATIVE_THEME_EXPORT NativeTheme {
+@@ -673,6 +690,7 @@ class NATIVE_THEME_EXPORT NativeTheme {
    PreferredColorScheme preferred_color_scheme_ = PreferredColorScheme::kLight;
    PreferredContrast preferred_contrast_ = PreferredContrast::kNoPreference;
    std::optional<base::TimeDelta> caret_blink_interval_;

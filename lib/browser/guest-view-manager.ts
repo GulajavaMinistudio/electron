@@ -1,10 +1,11 @@
-import { webContents } from 'electron/main';
 import { ipcMainInternal } from '@electron/internal/browser/ipc-main-internal';
 import * as ipcMainUtils from '@electron/internal/browser/ipc-main-internal-utils';
 import { parseWebViewWebPreferences } from '@electron/internal/browser/parse-features-string';
-import { syncMethods, asyncMethods, properties, navigationHistorySyncMethods } from '@electron/internal/common/web-view-methods';
 import { webViewEvents } from '@electron/internal/browser/web-view-events';
 import { IPC_MESSAGES } from '@electron/internal/common/ipc-messages';
+import { syncMethods, asyncMethods, properties, navigationHistorySyncMethods } from '@electron/internal/common/web-view-methods';
+
+import { webContents } from 'electron/main';
 
 interface GuestInstance {
   elementInstanceId: number;
@@ -237,7 +238,7 @@ const watchEmbedder = function (embedder: Electron.WebContents) {
       }
     }
   };
-  embedder.on('-window-visibility-change' as any, onVisibilityChange);
+  embedder.on('-window-visibility-change', onVisibilityChange);
 
   embedder.once('will-destroy' as any, () => {
     // Usually the guestInstances is cleared when guest is destroyed, but it
@@ -249,7 +250,7 @@ const watchEmbedder = function (embedder: Electron.WebContents) {
       }
     }
     // Clear the listeners.
-    embedder.removeListener('-window-visibility-change' as any, onVisibilityChange);
+    embedder.removeListener('-window-visibility-change', onVisibilityChange);
     watchedEmbedders.delete(embedder);
   });
 };

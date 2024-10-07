@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { Module } from 'node:module';
 import * as path from 'node:path';
 import * as url from 'node:url';
+
 const { app, dialog } = electron;
 
 type DefaultAppOptions = {
@@ -255,6 +256,7 @@ async function startRepl () {
 // start the default app.
 if (option.file && !option.webdriver) {
   const file = option.file;
+  // eslint-disable-next-line n/no-deprecated-api
   const protocol = url.parse(file).protocol;
   const extension = path.extname(file);
   if (protocol === 'http:' || protocol === 'https:' || protocol === 'file:' || protocol === 'chrome:') {

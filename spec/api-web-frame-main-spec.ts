@@ -1,13 +1,16 @@
+import { BrowserWindow, WebFrameMain, webFrameMain, ipcMain, app, WebContents } from 'electron/main';
+
 import { expect } from 'chai';
+
+import { once } from 'node:events';
 import * as http from 'node:http';
 import * as path from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 import * as url from 'node:url';
-import { BrowserWindow, WebFrameMain, webFrameMain, ipcMain, app, WebContents } from 'electron/main';
-import { closeAllWindows } from './lib/window-helpers';
+
 import { emittedNTimes } from './lib/events-helpers';
 import { defer, ifit, listen, waitUntil } from './lib/spec-helpers';
-import { once } from 'node:events';
-import { setTimeout } from 'node:timers/promises';
+import { closeAllWindows } from './lib/window-helpers';
 
 describe('webFrameMain module', () => {
   const fixtures = path.resolve(__dirname, 'fixtures');
@@ -20,7 +23,7 @@ describe('webFrameMain module', () => {
   /** Creates an HTTP server whose handler embeds the given iframe src. */
   const createServer = async () => {
     const server = http.createServer((req, res) => {
-      const params = new URLSearchParams(url.parse(req.url || '').search || '');
+      const params = new URLSearchParams(new URL(req.url || '', `http://${req.headers.host}`).search || '');
       if (params.has('frameSrc')) {
         res.end(`<iframe src="${params.get('frameSrc')}"></iframe>`);
       } else {
