@@ -27,7 +27,7 @@ namespace electron {
 
 class NativeWindowObserver : public base::CheckedObserver {
  public:
-  ~NativeWindowObserver() override {}
+  ~NativeWindowObserver() override = default;
 
   // Called when the web page in window wants to create a popup window.
   virtual void WillCreatePopupWindow(const std::u16string& frame_name,
@@ -50,8 +50,12 @@ class NativeWindowObserver : public base::CheckedObserver {
   // Called when the window is closed.
   virtual void OnWindowClosed() {}
 
+  // Called when Windows sends WM_QUERYENDSESSION message.
+  virtual void OnWindowQueryEndSession(const std::vector<std::string>& reasons,
+                                       bool* prevent_default) {}
+
   // Called when Windows sends WM_ENDSESSION message
-  virtual void OnWindowEndSession() {}
+  virtual void OnWindowEndSession(const std::vector<std::string>& reasons) {}
 
   // Called when window loses focus.
   virtual void OnWindowBlur() {}

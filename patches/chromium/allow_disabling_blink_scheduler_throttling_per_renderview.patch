@@ -6,7 +6,7 @@ Subject: allow disabling blink scheduler throttling per RenderView
 This allows us to disable throttling for hidden windows.
 
 diff --git a/content/browser/renderer_host/navigation_controller_impl_unittest.cc b/content/browser/renderer_host/navigation_controller_impl_unittest.cc
-index e392efaf2e1ac3cfbef2d787ba40f0491b67f3cc..d45c7570484a7c1bfca25c860a1ddd2d6a9c741d 100644
+index 63470e0c3d77a2aeeab80e25580b5ccc081cb2b9..e652131f10aa6c74ea9581fcc66a6ffae82d3d86 100644
 --- a/content/browser/renderer_host/navigation_controller_impl_unittest.cc
 +++ b/content/browser/renderer_host/navigation_controller_impl_unittest.cc
 @@ -163,6 +163,12 @@ class MockPageBroadcast : public blink::mojom::PageBroadcast {
@@ -51,7 +51,7 @@ index 5fb8a3dc69dc5fc5bfa08e01d8f03707a23c9274..41774b60b8cb7e0a22cedc597dc07ad1
    void SendRendererPreferencesToRenderer(
        const blink::RendererPreferences& preferences);
 diff --git a/content/browser/renderer_host/render_widget_host_view_aura.cc b/content/browser/renderer_host/render_widget_host_view_aura.cc
-index b8c1377d3144031f108bc79dc49d81a4ffbdb68d..1f9d5dde9099232ecb48557a28d545b2ec6f8f2e 100644
+index 0686fa205c43b70e6125502f8a9e76492ddafb5e..fb551f7bebc3b8d1d0c3679e060d0f103e3f7a73 100644
 --- a/content/browser/renderer_host/render_widget_host_view_aura.cc
 +++ b/content/browser/renderer_host/render_widget_host_view_aura.cc
 @@ -586,8 +586,8 @@ void RenderWidgetHostViewAura::ShowImpl(PageVisibilityState page_visibility) {
@@ -116,10 +116,10 @@ index 083af135d890c2837e72c314e170e81931bd2a20..5245ea88441ef84c15b8052a9011ce70
    // Visibility -----------------------------------------------------------
  
 diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
-index f5fe2e061448673c788315a167efff1fb70c3ef0..ed0c77c14e8dcf3e6d7328c8a9c640388b7be92d 100644
+index c1aebbc3db3e22e7e9391cb0eb2654a28a2052f4..77f2b8a03f92062fc9c07b04adb22d421127b73a 100644
 --- a/third_party/blink/renderer/core/exported/web_view_impl.cc
 +++ b/third_party/blink/renderer/core/exported/web_view_impl.cc
-@@ -2452,6 +2452,10 @@ void WebViewImpl::SetPageLifecycleStateInternal(
+@@ -2468,6 +2468,10 @@ void WebViewImpl::SetPageLifecycleStateInternal(
    TRACE_EVENT2("navigation", "WebViewImpl::SetPageLifecycleStateInternal",
                 "old_state", old_state, "new_state", new_state);
  
@@ -130,7 +130,7 @@ index f5fe2e061448673c788315a167efff1fb70c3ef0..ed0c77c14e8dcf3e6d7328c8a9c64038
    bool storing_in_bfcache = new_state->is_in_back_forward_cache &&
                              !old_state->is_in_back_forward_cache;
    bool restoring_from_bfcache = !new_state->is_in_back_forward_cache &&
-@@ -3984,10 +3988,23 @@ PageScheduler* WebViewImpl::Scheduler() const {
+@@ -3996,10 +4000,23 @@ PageScheduler* WebViewImpl::Scheduler() const {
    return GetPage()->GetPageScheduler();
  }
  
@@ -155,7 +155,7 @@ index f5fe2e061448673c788315a167efff1fb70c3ef0..ed0c77c14e8dcf3e6d7328c8a9c64038
    // Do not throttle if the page should be painting.
    bool is_visible =
 diff --git a/third_party/blink/renderer/core/exported/web_view_impl.h b/third_party/blink/renderer/core/exported/web_view_impl.h
-index d5397c53559ba239e46c9485fb30daea89bd392b..4989d9f6a28d519098b16e832c2a36c61ab04c15 100644
+index 4f77ef1379390973fa912640a33a5033dc8db68f..12d4932d82df824e459a8a90b6f24222172618df 100644
 --- a/third_party/blink/renderer/core/exported/web_view_impl.h
 +++ b/third_party/blink/renderer/core/exported/web_view_impl.h
 @@ -448,6 +448,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
@@ -166,7 +166,7 @@ index d5397c53559ba239e46c9485fb30daea89bd392b..4989d9f6a28d519098b16e832c2a36c6
    void SetVisibilityState(mojom::blink::PageVisibilityState visibility_state,
                            bool is_initial_state) override;
    mojom::blink::PageVisibilityState GetVisibilityState() override;
-@@ -933,6 +934,8 @@ class CORE_EXPORT WebViewImpl final : public WebView,
+@@ -938,6 +939,8 @@ class CORE_EXPORT WebViewImpl final : public WebView,
    // If true, we send IPC messages when |preferred_size_| changes.
    bool send_preferred_size_changes_ = false;
  
