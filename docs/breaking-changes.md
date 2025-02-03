@@ -12,7 +12,41 @@ This document uses the following convention to categorize breaking changes:
 * **Deprecated:** An API was marked as deprecated. The API will continue to function, but will emit a deprecation warning, and will be removed in a future release.
 * **Removed:** An API or feature was removed, and is no longer supported by Electron.
 
-## Planned Breaking API Changes (34.0)
+## Planned Breaking API Changes (35.0)
+
+### Deprecated: `getFromVersionID` on `session.serviceWorkers`
+
+The `session.serviceWorkers.fromVersionID(versionId)` API has been deprecated
+in favor of `session.serviceWorkers.getInfoFromVersionID(versionId)`. This was
+changed to make it more clear which object is returned with the introduction
+of the `session.serviceWorkers.getWorkerFromVersionID(versionId)` API.
+
+```js
+// Deprecated
+session.serviceWorkers.fromVersionID(versionId)
+
+// Replace with
+session.serviceWorkers.getInfoFromVersionID(versionId)
+```
+
+### Deprecated: `setPreloads`, `getPreloads` on `Session`
+
+`registerPreloadScript`, `unregisterPreloadScript`, and `getPreloadScripts` are introduced as a
+replacement for the deprecated methods. These new APIs allow third-party libraries to register
+preload scripts without replacing existing scripts. Also, the new `type` option allows for
+additional preload targets beyond `frame`.
+
+```js
+// Deprecated
+session.setPreloads([path.join(__dirname, 'preload.js')])
+
+// Replace with:
+session.registerPreloadScript({
+  type: 'frame',
+  id: 'app-preload',
+  filePath: path.join(__dirname, 'preload.js')
+})
+```
 
 ### Deprecated: `level`, `message`, `line`, and `sourceId` arguments in `console-message` event on `WebContents`
 
@@ -28,6 +62,14 @@ webContents.on('console-message', ({ level, message, lineNumber, sourceId, frame
 ```
 
 Additionally, `level` is now a string with possible values of `info`, `warning`, `error`, and `debug`.
+
+## Planned Breaking API Changes (34.0)
+
+### Behavior Changed: menu bar will be hidden during fullscreen on Windows
+
+This brings the behavior to parity with Linux. Prior behavior: Menu bar is still visible during fullscreen on Windows. New behavior: Menu bar is hidden during fullscreen on Windows.
+
+**Correction**: This was previously listed as a breaking change in Electron 33, but was first released in Electron 34.
 
 ## Planned Breaking API Changes (33.0)
 
@@ -48,15 +90,15 @@ immediately upon being received. Otherwise, it's not guaranteed to point to the
 same webpage as when received. To avoid misaligned expectations, Electron will
 return `null` in the case of late access where the webpage has changed.
 
-```ts
+```js
 ipcMain.on('unload-event', (event) => {
-  event.senderFrame; // ✅ accessed immediately
-});
+  event.senderFrame // ✅ accessed immediately
+})
 
 ipcMain.on('unload-event', async (event) => {
-  await crossOriginNavigationPromise;
-  event.senderFrame; // ❌ returns `null` due to late access
-});
+  await crossOriginNavigationPromise
+  event.senderFrame // ❌ returns `null` due to late access
+})
 ```
 
 ### Behavior Changed: custom protocol URL handling on Windows
@@ -85,10 +127,6 @@ protocol.handle(other, (req) => {
 mainWindow.loadURL('data:text/html,<script src="loaded-from-dataurl.js"></script>', { baseURLForDataURL: 'other://' })
 mainWindow.loadURL('other://index.html')
 ```
-
-### Behavior Changed: menu bar will be hidden during fullscreen on Windows
-
-This brings the behavior to parity with Linux. Prior behavior: Menu bar is still visible during fullscreen on Windows. New behavior: Menu bar is hidden during fullscreen on Windows.
 
 ### Behavior Changed: `webContents` property on `login` on `app`
 
