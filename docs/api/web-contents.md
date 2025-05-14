@@ -463,7 +463,8 @@ win.webContents.on('will-prevent-unload', (event) => {
 })
 ```
 
-**Note:** This will be emitted for `BrowserViews` but will _not_ be respected - this is because we have chosen not to tie the `BrowserView` lifecycle to its owning BrowserWindow should one exist per the [specification](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event).
+> [!NOTE]
+> This will be emitted for `BrowserViews` but will _not_ be respected - this is because we have chosen not to tie the `BrowserView` lifecycle to its owning BrowserWindow should one exist per the [specification](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event).
 
 #### Event: 'render-process-gone'
 
@@ -887,7 +888,7 @@ const { BrowserWindow } = require('electron')
 
 const win = new BrowserWindow({ webPreferences: { offscreen: true } })
 win.webContents.on('paint', (event, dirty, image) => {
-  // updateBitmap(dirty, image.getBitmap())
+  // updateBitmap(dirty, image.toBitmap())
 })
 win.loadURL('https://github.com')
 ```
@@ -897,6 +898,8 @@ copying data between CPU and GPU memory, with Chromium's hardware acceleration s
 
 Only a limited number of textures can exist at the same time, so it's important that you call `texture.release()` as soon as you're done with the texture.
 By managing the texture lifecycle by yourself, you can safely pass the `texture.textureInfo` to other processes through IPC.
+
+More details can be found in the [offscreen rendering tutorial](../tutorial/offscreen-rendering.md). To learn about how to handle the texture in native code, refer to [offscreen rendering's code documentation.](https://github.com/electron/electron/blob/main/shell/browser/osr/README.md).
 
 ```js
 const { BrowserWindow } = require('electron')
@@ -909,7 +912,7 @@ win.webContents.on('paint', async (e, dirty, image) => {
     await new Promise(resolve => setTimeout(resolve, 50))
 
     // You can send the native texture handle to native code for importing into your rendering pipeline.
-    // For example: https://github.com/electron/electron/tree/main/spec/fixtures/native-addon/osr-gpu
+    // Read more at https://github.com/electron/electron/blob/main/shell/browser/osr/README.md
     // importTextureHandle(dirty, e.texture.textureInfo)
 
     // You must call `e.texture.release()` as soon as possible, before the underlying frame pool is drained.
@@ -1489,7 +1492,8 @@ increment above or below represents zooming 20% larger or smaller to default
 limits of 300% and 50% of original size, respectively. The formula for this is
 `scale := 1.2 ^ level`.
 
-> **NOTE**: The zoom policy at the Chromium level is same-origin, meaning that the
+> [!NOTE]
+> The zoom policy at the Chromium level is same-origin, meaning that the
 > zoom level for a specific domain propagates across all instances of windows with
 > the same domain. Differentiating the window URLs will make zoom work per-window.
 
@@ -1506,7 +1510,8 @@ Returns `Promise<void>`
 
 Sets the maximum and minimum pinch-to-zoom level.
 
-> **NOTE**: Visual zoom is disabled by default in Electron. To re-enable it, call:
+> [!NOTE]
+> Visual zoom is disabled by default in Electron. To re-enable it, call:
 >
 > ```js
 > const win = new BrowserWindow()
@@ -2074,7 +2079,9 @@ Disable device emulation enabled by `webContents.enableDeviceEmulation`.
 * `inputEvent` [MouseInputEvent](structures/mouse-input-event.md) | [MouseWheelInputEvent](structures/mouse-wheel-input-event.md) | [KeyboardInputEvent](structures/keyboard-input-event.md)
 
 Sends an input `event` to the page.
-**Note:** The [`BrowserWindow`](browser-window.md) containing the contents needs to be focused for
+
+> [!NOTE]
+> The [`BrowserWindow`](browser-window.md) containing the contents needs to be focused for
 `sendInputEvent()` to work.
 
 #### `contents.beginFrameSubscription([onlyDirty ,]callback)`
@@ -2216,7 +2223,9 @@ By default this value is `{ min: 0, max: 0 }` , which would apply no restriction
   * `max` Integer - The maximum UDP port number that WebRTC should use.
 
 Setting the WebRTC UDP Port Range allows you to restrict the udp port range used by WebRTC. By default the port range is unrestricted.
-**Note:** To reset to an unrestricted port range this value should be set to `{ min: 0, max: 0 }`.
+
+> [!NOTE]
+> To reset to an unrestricted port range this value should be set to `{ min: 0, max: 0 }`.
 
 #### `contents.getMediaSourceId(requestWebContents)`
 
@@ -2362,8 +2371,9 @@ A [`WebContents`](web-contents.md) instance that might own this `WebContents`.
 
 A `WebContents | null` property that represents the of DevTools `WebContents` associated with a given `WebContents`.
 
-**Note:** Users should never store this object because it may become `null`
-when the DevTools has been closed.
+> [!NOTE]
+> Users should never store this object because it may become `null`
+> when the DevTools has been closed.
 
 #### `contents.debugger` _Readonly_
 
@@ -2389,8 +2399,13 @@ A [`WebFrameMain`](web-frame-main.md) property that represents the top frame of 
 
 #### `contents.opener` _Readonly_
 
-A [`WebFrameMain`](web-frame-main.md) property that represents the frame that opened this WebContents, either
+A [`WebFrameMain | null`](web-frame-main.md) property that represents the frame that opened this WebContents, either
 with open(), or by navigating a link with a target attribute.
+
+#### `contents.focusedFrame` _Readonly_
+
+A [`WebFrameMain | null`](web-frame-main.md) property that represents the currently focused frame in this WebContents.
+Can be the top frame, an inner `<iframe>`, or `null` if nothing is focused.
 
 [keyboardevent]: https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent
 [event-emitter]: https://nodejs.org/api/events.html#events_class_eventemitter

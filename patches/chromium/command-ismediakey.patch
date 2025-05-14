@@ -39,10 +39,10 @@ index e87c180342b967756efeb701c73207fcee8754f1..42e37564e585987d367921568f0f1d2b
            NOTREACHED();
        }
 diff --git a/ui/base/accelerators/global_accelerator_listener/global_accelerator_listener_ozone.cc b/ui/base/accelerators/global_accelerator_listener/global_accelerator_listener_ozone.cc
-index e4a772c18a67e93248e3488b2c2b798ddcfbb2ff..43b210d16598f08236ecd23ec5f49a7130fd4be7 100644
+index b6985bd63a34c55154fcfae601add6ce6c451704..fb44cc65b1a15c8b69410a2a2cb925a0326bb438 100644
 --- a/ui/base/accelerators/global_accelerator_listener/global_accelerator_listener_ozone.cc
 +++ b/ui/base/accelerators/global_accelerator_listener/global_accelerator_listener_ozone.cc
-@@ -111,7 +111,8 @@ bool GlobalAcceleratorListenerOzone::StartListeningForAccelerator(
+@@ -147,7 +147,8 @@ bool GlobalAcceleratorListenerOzone::StartListeningForAccelerator(
    const bool registered =
        platform_global_shortcut_listener_->RegisterAccelerator(
            accelerator.key_code(), accelerator.IsAltDown(),
@@ -52,7 +52,7 @@ index e4a772c18a67e93248e3488b2c2b798ddcfbb2ff..43b210d16598f08236ecd23ec5f49a71
    if (registered) {
      registered_hot_keys_.insert(accelerator);
    }
-@@ -126,14 +127,15 @@ void GlobalAcceleratorListenerOzone::StopListeningForAccelerator(
+@@ -162,14 +163,15 @@ void GlobalAcceleratorListenerOzone::StopListeningForAccelerator(
  
    platform_global_shortcut_listener_->UnregisterAccelerator(
        accelerator.key_code(), accelerator.IsAltDown(), accelerator.IsCtrlDown(),
@@ -70,7 +70,7 @@ index e4a772c18a67e93248e3488b2c2b798ddcfbb2ff..43b210d16598f08236ecd23ec5f49a71
    int modifiers = 0;
    if (is_alt_down) {
      modifiers |= ui::EF_ALT_DOWN;
-@@ -144,6 +146,9 @@ void GlobalAcceleratorListenerOzone::OnKeyPressed(ui::KeyboardCode key_code,
+@@ -180,6 +182,9 @@ void GlobalAcceleratorListenerOzone::OnKeyPressed(ui::KeyboardCode key_code,
    if (is_shift_down) {
      modifiers |= ui::EF_SHIFT_DOWN;
    }
@@ -159,10 +159,10 @@ index a955d19eedfe56ae3a115ce4c77fea016fd66d49..ad2557495a02cae03dd2b87df8659a6f
    }
  
 diff --git a/ui/base/x/x11_global_shortcut_listener.cc b/ui/base/x/x11_global_shortcut_listener.cc
-index 9e73ed854072bf3d66dbab4cfb5b0a6a9068aafa..82ca3354afc2a0c4c09c6332512902859c77f4c9 100644
+index 838b89cd8d2c1884ce253a42325faabe73ee3985..b47019cd02202b8f1ea29d45e6b1741e2a9a953e 100644
 --- a/ui/base/x/x11_global_shortcut_listener.cc
 +++ b/ui/base/x/x11_global_shortcut_listener.cc
-@@ -34,11 +34,13 @@ const auto kModifiersMasks = std::to_array<x11::ModMask>({
+@@ -34,11 +34,13 @@ constexpr auto kModifiersMasks = std::to_array<x11::ModMask>({
  
  x11::ModMask GetNativeModifiers(bool is_alt_down,
                                  bool is_ctrl_down,

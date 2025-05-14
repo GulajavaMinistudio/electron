@@ -46,19 +46,18 @@ index 5ba13096b98047ff33e4d44167c2a069ccc5e69d..a00b5979e3b5deb4ba315b4635c7e5d2
    }
  }
 diff --git a/lib/internal/modules/esm/resolve.js b/lib/internal/modules/esm/resolve.js
-index 61c043e35c6ce9ef9d7255e009162289e80eaf4d..0c41492aa9652112df0b839361570a832daf3b13 100644
+index bfd9bd3d127404de1cbb6f30c43ab0342590759d..9e7d8ef0adef3b68a3ec186e4b218f591aa69266 100644
 --- a/lib/internal/modules/esm/resolve.js
 +++ b/lib/internal/modules/esm/resolve.js
-@@ -791,6 +791,8 @@ function parsePackageName(specifier, base) {
-   return { packageName, packageSubpath, isScoped };
+@@ -751,6 +751,7 @@ function packageImportsResolve(name, base, conditions) {
+   throw importNotDefined(name, packageJSONUrl, base);
  }
  
 +const electronTypes = ['electron', 'electron/main', 'electron/common', 'electron/renderer'];
-+
+ 
  /**
   * Resolves a package specifier to a URL.
-  * @param {string} specifier - The package specifier to resolve.
-@@ -804,6 +806,11 @@ function packageResolve(specifier, base, conditions) {
+@@ -765,6 +766,11 @@ function packageResolve(specifier, base, conditions) {
      return new URL('node:' + specifier);
    }
  
@@ -67,23 +66,23 @@ index 61c043e35c6ce9ef9d7255e009162289e80eaf4d..0c41492aa9652112df0b839361570a83
 +    return new URL('electron:electron');
 +  }
 +
-   const { packageName, packageSubpath, isScoped } =
-     parsePackageName(specifier, base);
+   const { packageJSONUrl, packageJSONPath, packageSubpath } = packageJsonReader.getPackageJSONURL(specifier, base);
  
+   const packageConfig = packageJsonReader.read(packageJSONPath, { __proto__: null, specifier, base, isESM: true });
 diff --git a/lib/internal/modules/esm/translators.js b/lib/internal/modules/esm/translators.js
-index 491dc3f450733a9181096a145cfa508767682658..23ed971daebdda3cb627907ffa3626daaa5b5b7b 100644
+index 7dcd7afe8ce3c25ceb314cdf15c330f3d66eb84f..4445bcc4c4c6c6f87ac45e693012a18a93739f9b 100644
 --- a/lib/internal/modules/esm/translators.js
 +++ b/lib/internal/modules/esm/translators.js
-@@ -182,7 +182,7 @@ function createCJSModuleWrap(url, source, isMain, loadCJS = loadCJSModule) {
+@@ -186,7 +186,7 @@ function createCJSModuleWrap(url, source, isMain, format, loadCJS = loadCJSModul
  
-   const { exportNames, module } = cjsPreparseModuleExports(filename, source);
+   const { exportNames, module } = cjsPreparseModuleExports(filename, source, isMain, format);
    cjsCache.set(url, module);
 -  const namesWithDefault = exportNames.has('default') ?
 +  const namesWithDefault = filename === 'electron' ? ['default', ...Object.keys(module.exports)] : exportNames.has('default') ?
      [...exportNames] : ['default', ...exportNames];
  
    if (isMain) {
-@@ -204,8 +204,8 @@ function createCJSModuleWrap(url, source, isMain, loadCJS = loadCJSModule) {
+@@ -208,8 +208,8 @@ function createCJSModuleWrap(url, source, isMain, format, loadCJS = loadCJSModul
        ({ exports } = module);
      }
      for (const exportName of exportNames) {
@@ -94,8 +93,8 @@ index 491dc3f450733a9181096a145cfa508767682658..23ed971daebdda3cb627907ffa3626da
          continue;
        }
        // We might trigger a getter -> dont fail.
-@@ -239,6 +239,10 @@ translators.set('require-commonjs', (url, source, isMain) => {
-   return createCJSModuleWrap(url, source);
+@@ -243,6 +243,10 @@ translators.set('require-commonjs', (url, source, isMain) => {
+   return createCJSModuleWrap(url, source, isMain, 'commonjs');
  });
  
 +translators.set('electron', () => {
@@ -106,7 +105,7 @@ index 491dc3f450733a9181096a145cfa508767682658..23ed971daebdda3cb627907ffa3626da
  // This translator function must be sync, as `require` is sync.
  translators.set('require-commonjs-typescript', (url, source, isMain) => {
 diff --git a/lib/internal/url.js b/lib/internal/url.js
-index 14b0ef61d2f91cf48bba9aceefc55751e7ed5db2..6d6b32f65131d1d55aeeae27dd2970440d99b4bd 100644
+index f6e58e196860fc9321e3367f8461ec2647d7e8f8..a80ecee888222e02f5d03f42f7af2c1ab9750cab 100644
 --- a/lib/internal/url.js
 +++ b/lib/internal/url.js
 @@ -1505,6 +1505,8 @@ function fileURLToPath(path, options = kEmptyObject) {

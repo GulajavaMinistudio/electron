@@ -155,7 +155,7 @@ class JSLayoutManager : public views::LayoutManagerBase {
  public:
   explicit JSLayoutManager(LayoutCallback layout_callback)
       : layout_callback_(std::move(layout_callback)) {}
-  ~JSLayoutManager() override {}
+  ~JSLayoutManager() override = default;
 
   // views::LayoutManagerBase
   views::ProposedLayout CalculateProposedLayout(
@@ -170,7 +170,7 @@ class JSLayoutManager : public views::LayoutManagerBase {
 };
 
 View::View(views::View* view) : view_(view) {
-  view_->set_owned_by_client();
+  view_->set_owned_by_client(views::View::OwnedByClientPassKey{});
   view_->AddObserver(this);
 }
 
@@ -280,7 +280,7 @@ void View::SetBounds(const gfx::Rect& bounds) {
   view_->SetBoundsRect(bounds);
 }
 
-gfx::Rect View::GetBounds() {
+gfx::Rect View::GetBounds() const {
   if (!view_)
     return {};
   return view_->bounds();
@@ -346,7 +346,8 @@ std::vector<v8::Local<v8::Value>> View::GetChildren() {
 void View::SetBackgroundColor(std::optional<WrappedSkColor> color) {
   if (!view_)
     return;
-  view_->SetBackground(color ? views::CreateSolidBackground(*color) : nullptr);
+  view_->SetBackground(color ? views::CreateSolidBackground({*color})
+                             : nullptr);
 }
 
 void View::SetBorderRadius(int radius) {

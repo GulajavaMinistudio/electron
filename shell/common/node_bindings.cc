@@ -5,11 +5,13 @@
 #include "shell/common/node_bindings.h"
 
 #include <algorithm>
+#include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "base/allocator/partition_allocator/src/partition_alloc/oom.h"
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/containers/fixed_flat_set.h"
@@ -34,7 +36,6 @@
 #include "shell/common/gin_helper/dictionary.h"
 #include "shell/common/gin_helper/event.h"
 #include "shell/common/gin_helper/event_emitter_caller.h"
-#include "shell/common/gin_helper/microtasks_scope.h"
 #include "shell/common/mac/main_application_bundle.h"
 #include "shell/common/node_includes.h"
 #include "shell/common/node_util.h"
@@ -169,6 +170,33 @@ void V8FatalErrorCallback(const char* location, const char* message) {
   *zero = 0;
 }
 
+void V8OOMErrorCallback(const char* location, const v8::OOMDetails& details) {
+  const char* message =
+      details.is_heap_oom ? "Allocation failed - JavaScript heap out of memory"
+                          : "Allocation failed - process out of memory";
+  if (location) {
+    LOG(ERROR) << "OOM error in V8: " << location << " " << message;
+  } else {
+    LOG(ERROR) << "OOM error in V8: " << message;
+  }
+  if (details.detail) {
+    LOG(ERROR) << "OOM detail: " << details.detail;
+  }
+
+#if !IS_MAS_BUILD()
+  electron::crash_keys::SetCrashKey("electron.v8-oom.is_heap_oom",
+                                    std::to_string(details.is_heap_oom));
+  if (location) {
+    electron::crash_keys::SetCrashKey("electron.v8-oom.location", location);
+  }
+  if (details.detail) {
+    electron::crash_keys::SetCrashKey("electron.v8-oom.detail", details.detail);
+  }
+#endif
+
+  OOM_CRASH(0);
+}
+
 bool AllowWasmCodeGenerationCallback(v8::Local<v8::Context> context,
                                      v8::Local<v8::String> source) {
   // If we're running with contextIsolation enabled in the renderer process,
@@ -287,9 +315,8 @@ void ErrorMessageListener(v8::Local<v8::Message> message,
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
   node::Environment* env = node::Environment::GetCurrent(isolate);
   if (env) {
-    gin_helper::MicrotasksScope microtasks_scope(
-        isolate, env->context()->GetMicrotaskQueue(), false,
-        v8::MicrotasksScope::kDoNotRunMicrotasks);
+    v8::MicrotasksScope microtasks_scope(
+        env->context(), v8::MicrotasksScope::kDoNotRunMicrotasks);
     // Emit the after() hooks now that the exception has been handled.
     // Analogous to node/lib/internal/process/execution.js#L176-L180
     if (env->async_hooks()->fields()[node::AsyncHooks::kAfter]) {
@@ -321,10 +348,12 @@ bool IsAllowedOption(const std::string_view option) {
           "--inspect-brk-node",
           "--inspect-port",
           "--inspect-publish-uid",
+          "--experimental-network-inspection",
       });
 
   // This should be aligned with what's possible to set via the process object.
   static constexpr auto options = base::MakeFixedFlatSet<std::string_view>({
+      "--diagnostic-dir",
       "--dns-result-order",
       "--no-deprecation",
       "--throw-deprecation",
@@ -365,33 +394,35 @@ void SetNodeOptions(base::Environment* env) {
 
   if (env->HasVar("NODE_OPTIONS")) {
     if (electron::fuses::IsNodeOptionsEnabled()) {
-      std::string options;
-      env->GetVar("NODE_OPTIONS", &options);
-      std::vector<std::string> parts = base::SplitString(
+      std::string result_options;
+      std::string options = env->GetVar("NODE_OPTIONS").value();
+      const std::vector<std::string_view> parts = base::SplitStringPiece(
           options, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
       bool is_packaged_app = electron::api::App::IsPackaged();
 
-      for (const auto& part : parts) {
+      for (const std::string_view part : parts) {
         // Strip off values passed to individual NODE_OPTIONs
-        std::string option = part.substr(0, part.find('='));
+        const std::string_view option = part.substr(0, part.find('='));
 
         if (is_packaged_app && !pkg_opts.contains(option)) {
           // Explicitly disallow majority of NODE_OPTIONS in packaged apps
           LOG(ERROR) << "Most NODE_OPTIONs are not supported in packaged apps."
                      << " See documentation for more details.";
-          options.erase(options.find(option), part.length());
+          continue;
         } else if (disallowed.contains(option)) {
           // Remove NODE_OPTIONS specifically disallowed for use in Node.js
           // through Electron owing to constraints like BoringSSL.
           LOG(ERROR) << "The NODE_OPTION " << option
                      << " is not supported in Electron";
-          options.erase(options.find(option), part.length());
+          continue;
         }
+        result_options.append(part);
+        result_options.append(" ");
       }
 
       // overwrite new NODE_OPTIONS without unsupported variables
-      env->SetVar("NODE_OPTIONS", options);
+      env->SetVar("NODE_OPTIONS", result_options);
     } else {
       LOG(WARNING) << "NODE_OPTIONS ignored due to disabled nodeOptions fuse.";
       env->UnSetVar("NODE_OPTIONS");
@@ -574,9 +605,8 @@ void NodeBindings::Initialize(v8::Local<v8::Context> context) {
           args,
           static_cast<node::ProcessInitializationFlags::Flags>(process_flags));
 
-  for (const std::string& error : result->errors()) {
-    fprintf(stderr, "%s: %s\n", args[0].c_str(), error.c_str());
-  }
+  for (const std::string& error : result->errors())
+    std::cerr << args[0] << ": " << error << '\n';
 
   if (result->early_return() != 0)
     exit(result->exit_code());
@@ -597,6 +627,7 @@ void NodeBindings::Initialize(v8::Local<v8::Context> context) {
 std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
     v8::Local<v8::Context> context,
     node::MultiIsolatePlatform* platform,
+    size_t max_young_generation_size,
     std::vector<std::string> args,
     std::vector<std::string> exec_args,
     std::optional<base::RepeatingCallback<void()>> on_app_code_ready) {
@@ -647,6 +678,7 @@ std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
   args.insert(args.begin() + 1, init_script);
 
   auto* isolate_data = node::CreateIsolateData(isolate, uv_loop_, platform);
+  isolate_data->max_young_gen_size = max_young_generation_size;
   context->SetAlignedPointerInEmbedderData(kElectronContextEmbedderDataIndex,
                                            static_cast<void*>(isolate_data));
 
@@ -686,6 +718,7 @@ std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
   // Use a custom fatal error callback to allow us to add
   // crash message and location to CrashReports.
   is.fatal_error_callback = V8FatalErrorCallback;
+  is.oom_error_callback = V8OOMErrorCallback;
 
   // We don't want to abort either in the renderer or browser processes.
   // We already listen for uncaught exceptions and handle them there.
@@ -784,8 +817,10 @@ std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
 std::shared_ptr<node::Environment> NodeBindings::CreateEnvironment(
     v8::Local<v8::Context> context,
     node::MultiIsolatePlatform* platform,
+    size_t max_young_generation_size,
     std::optional<base::RepeatingCallback<void()>> on_app_code_ready) {
-  return CreateEnvironment(context, platform, ElectronCommandLine::AsUtf8(), {},
+  return CreateEnvironment(context, platform, max_young_generation_size,
+                           ElectronCommandLine::AsUtf8(), {},
                            on_app_code_ready);
 }
 
@@ -874,28 +909,22 @@ void NodeBindings::UvRunOnce() {
   // Enter node context while dealing with uv events.
   v8::Context::Scope context_scope(env->context());
 
-  // Node.js expects `kExplicit` microtasks policy and will run microtasks
-  // checkpoints after every call into JavaScript. Since we use a different
-  // policy in the renderer - switch to `kExplicit` and then drop back to the
-  // previous policy value.
-  v8::MicrotaskQueue* microtask_queue = env->context()->GetMicrotaskQueue();
-  auto old_policy = microtask_queue->microtasks_policy();
-  DCHECK_EQ(microtask_queue->GetMicrotasksScopeDepth(), 0);
-  microtask_queue->set_microtasks_policy(v8::MicrotasksPolicy::kExplicit);
+  {
+    util::ExplicitMicrotasksScope microtasks_scope(
+        env->context()->GetMicrotaskQueue());
 
-  if (browser_env_ != BrowserEnvironment::kBrowser)
-    TRACE_EVENT_BEGIN0("devtools.timeline", "FunctionCall");
+    if (browser_env_ != BrowserEnvironment::kBrowser)
+      TRACE_EVENT_BEGIN0("devtools.timeline", "FunctionCall");
 
-  // Deal with uv events.
-  int r = uv_run(uv_loop_, UV_RUN_NOWAIT);
+    // Deal with uv events.
+    int r = uv_run(uv_loop_, UV_RUN_NOWAIT);
 
-  if (browser_env_ != BrowserEnvironment::kBrowser)
-    TRACE_EVENT_END0("devtools.timeline", "FunctionCall");
+    if (browser_env_ != BrowserEnvironment::kBrowser)
+      TRACE_EVENT_END0("devtools.timeline", "FunctionCall");
 
-  microtask_queue->set_microtasks_policy(old_policy);
-
-  if (r == 0)
-    base::RunLoop().QuitWhenIdle();  // Quit from uv.
+    if (r == 0)
+      base::RunLoop().QuitWhenIdle();  // Quit from uv.
+  }
 
   // Tell the worker thread to continue polling.
   uv_sem_post(&embed_sem_);

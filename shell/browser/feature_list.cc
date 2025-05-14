@@ -11,12 +11,15 @@
 #include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
 #include "components/spellcheck/common/spellcheck_features.h"
+#include "content/common/features.h"
 #include "content/public/common/content_features.h"
 #include "electron/buildflags/buildflags.h"
 #include "media/base/media_switches.h"
 #include "net/base/features.h"
+#include "printing/buildflags/buildflags.h"
 #include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/common/features.h"
+#include "ui/accessibility/ax_features.mojom-features.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "device/base/features.h"  // nogncheck
@@ -24,6 +27,14 @@
 
 #if BUILDFLAG(ENABLE_PDF_VIEWER)
 #include "pdf/pdf_features.h"
+#endif
+
+#if BUILDFLAG(IS_LINUX)
+#include "printing/printing_features.h"
+#endif
+
+#if BUILDFLAG(IS_WIN)
+#include "ui/views/views_features.h"
 #endif
 
 namespace electron {
@@ -39,13 +50,29 @@ void InitializeFeatureList() {
   // Can be reenabled when our site instance policy is aligned with chromium
   // when node integration is enabled.
   disable_features +=
-      std::string(",") + features::kSpareRendererForSitePerProcess.name;
+      std::string(",") + features::kSpareRendererForSitePerProcess.name +
+      // See https://chromium-review.googlesource.com/c/chromium/src/+/6487926
+      // this breaks PDFs locally as we don't have GLIC infra enabled.
+      std::string(",") + ax::mojom::features::kScreenAIOCREnabled.name;
 
 #if BUILDFLAG(IS_WIN)
   disable_features +=
       // Delayed spellcheck initialization is causing the
       // 'custom dictionary word list API' spec to crash.
       std::string(",") + spellcheck::kWinDelaySpellcheckServiceInit.name;
+  // Refs https://issues.chromium.org/issues/401996981
+  // TODO(deepak1556): Remove this once test added in
+  // https://github.com/electron/electron/pull/12904
+  // can work without this feature.
+  enable_features += std::string(",") +
+                     views::features::kEnableTransparentHwndEnlargement.name;
+#endif
+
+#if BUILDFLAG(IS_MAC)
+  disable_features +=
+      // MacWebContentsOcclusion is causing some odd visibility
+      // issues with multiple web contents
+      std::string(",") + features::kMacWebContentsOcclusion.name;
 #endif
 
 #if BUILDFLAG(ENABLE_PDF_VIEWER)

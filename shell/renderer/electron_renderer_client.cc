@@ -16,6 +16,7 @@
 #include "shell/common/gin_helper/event_emitter_caller.h"
 #include "shell/common/node_bindings.h"
 #include "shell/common/node_includes.h"
+#include "shell/common/node_util.h"
 #include "shell/common/options_switches.h"
 #include "shell/renderer/electron_render_frame_observer.h"
 #include "shell/renderer/web_worker_observer.h"
@@ -92,8 +93,10 @@ void ElectronRendererClient::DidCreateScriptContext(
   }
 
   // Setup node tracing controller.
-  if (!node::tracing::TraceEventHelper::GetAgent())
-    node::tracing::TraceEventHelper::SetAgent(node::CreateAgent());
+  if (!node::tracing::TraceEventHelper::GetAgent()) {
+    auto* tracing_agent = new node::tracing::Agent();
+    node::tracing::TraceEventHelper::SetAgent(tracing_agent);
+  }
 
   // Setup node environment for each window.
   v8::Maybe<bool> initialized = node::InitializeContext(renderer_context);
@@ -107,7 +110,7 @@ void ElectronRendererClient::DidCreateScriptContext(
       blink::LoaderFreezeMode::kStrict);
 
   std::shared_ptr<node::Environment> env = node_bindings_->CreateEnvironment(
-      renderer_context, nullptr,
+      renderer_context, nullptr, 0,
       base::BindRepeating(&ElectronRendererClient::UndeferLoad,
                           base::Unretained(this), render_frame));
 
@@ -176,19 +179,12 @@ void ElectronRendererClient::WillReleaseScriptContext(
   if (env == node_bindings_->uv_env())
     node_bindings_->set_uv_env(nullptr);
 
-  // Destroying the node environment will also run the uv loop,
-  // Node.js expects `kExplicit` microtasks policy and will run microtasks
-  // checkpoints after every call into JavaScript. Since we use a different
-  // policy in the renderer - switch to `kExplicit` and then drop back to the
-  // previous policy value.
-  v8::MicrotaskQueue* microtask_queue = context->GetMicrotaskQueue();
-  auto old_policy = microtask_queue->microtasks_policy();
-  DCHECK_EQ(microtask_queue->GetMicrotasksScopeDepth(), 0);
-  microtask_queue->set_microtasks_policy(v8::MicrotasksPolicy::kExplicit);
-
-  environments_.erase(iter);
-
-  microtask_queue->set_microtasks_policy(old_policy);
+  // Destroying the node environment will also run the uv loop.
+  {
+    util::ExplicitMicrotasksScope microtasks_scope(
+        context->GetMicrotaskQueue());
+    environments_.erase(iter);
+  }
 
   // ElectronBindings is tracking node environments.
   electron_bindings_->EnvironmentDestroyed(env);
@@ -236,7 +232,7 @@ void ElectronRendererClient::WillDestroyWorkerContextOnWorkerThread(
 
 node::Environment* ElectronRendererClient::GetEnvironment(
     content::RenderFrame* render_frame) const {
-  if (!base::Contains(injected_frames_, render_frame))
+  if (!injected_frames_.contains(render_frame))
     return nullptr;
   v8::HandleScope handle_scope(v8::Isolate::GetCurrent());
   auto context =

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "base/containers/contains.h"
+#include "base/containers/map_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
 #include "components/prefs/pref_service.h"
@@ -51,29 +51,31 @@ namespace electron::api {
 
 gin::WrapperInfo GlobalShortcut::kWrapperInfo = {gin::kEmbedderNativeGin};
 
-GlobalShortcut::GlobalShortcut(v8::Isolate* isolate) {}
+GlobalShortcut::GlobalShortcut() {}
 
 GlobalShortcut::~GlobalShortcut() {
   UnregisterAll();
 }
 
 void GlobalShortcut::OnKeyPressed(const ui::Accelerator& accelerator) {
-  if (!base::Contains(accelerator_callback_map_, accelerator)) {
+  if (auto* cb = base::FindOrNull(accelerator_callback_map_, accelerator)) {
+    cb->Run();
+  } else {
     // This should never occur, because if it does,
     // ui::GlobalAcceleratorListener notifies us with wrong accelerator.
     NOTREACHED();
   }
-  accelerator_callback_map_[accelerator].Run();
 }
 
 void GlobalShortcut::ExecuteCommand(const extensions::ExtensionId& extension_id,
                                     const std::string& command_id) {
-  if (!base::Contains(command_callback_map_, command_id)) {
+  if (auto* cb = base::FindOrNull(command_callback_map_, command_id)) {
+    cb->Run();
+  } else {
     // This should never occur, because if it does, GlobalAcceleratorListener
     // notifies us with wrong command.
     NOTREACHED();
   }
-  command_callback_map_[command_id].Run();
 }
 
 bool GlobalShortcut::RegisterAll(
@@ -120,7 +122,7 @@ bool GlobalShortcut::Register(const ui::Accelerator& accelerator,
   }
 
   if (instance->IsRegistrationHandledExternally()) {
-    auto* context = ElectronBrowserContext::From("", false);
+    auto* context = ElectronBrowserContext::GetDefaultBrowserContext();
     PrefService* prefs = context->prefs();
 
     // Need a unique profile id. Set one if not generated yet, otherwise re-use
@@ -195,12 +197,12 @@ void GlobalShortcut::UnregisterSome(
 }
 
 bool GlobalShortcut::IsRegistered(const ui::Accelerator& accelerator) {
-  if (base::Contains(accelerator_callback_map_, accelerator)) {
+  if (accelerator_callback_map_.contains(accelerator)) {
     return true;
   }
   const std::string command_str =
       extensions::Command::AcceleratorToString(accelerator);
-  return base::Contains(command_callback_map_, command_str);
+  return command_callback_map_.contains(command_str);
 }
 
 void GlobalShortcut::UnregisterAll() {
@@ -217,7 +219,7 @@ void GlobalShortcut::UnregisterAll() {
 
 // static
 gin::Handle<GlobalShortcut> GlobalShortcut::Create(v8::Isolate* isolate) {
-  return gin::CreateHandle(isolate, new GlobalShortcut(isolate));
+  return gin::CreateHandle(isolate, new GlobalShortcut());
 }
 
 // static

@@ -5,18 +5,15 @@
 #include "shell/renderer/electron_sandboxed_renderer_client.h"
 
 #include <iterator>
-#include <tuple>
 #include <vector>
 
 #include "base/base_paths.h"
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/process/process_metrics.h"
 #include "content/public/renderer/render_frame.h"
 #include "shell/common/api/electron_bindings.h"
 #include "shell/common/application_info.h"
 #include "shell/common/gin_helper/dictionary.h"
-#include "shell/common/gin_helper/microtasks_scope.h"
 #include "shell/common/node_includes.h"
 #include "shell/common/node_util.h"
 #include "shell/common/options_switches.h"
@@ -148,9 +145,8 @@ void ElectronSandboxedRendererClient::WillReleaseScriptContext(
     return;
 
   auto* isolate = context->GetIsolate();
-  gin_helper::MicrotasksScope microtasks_scope{
-      isolate, context->GetMicrotaskQueue(), false,
-      v8::MicrotasksScope::kDoNotRunMicrotasks};
+  v8::MicrotasksScope microtasks_scope(
+      context, v8::MicrotasksScope::kDoNotRunMicrotasks);
   v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(context);
   InvokeEmitProcessEvent(context, "exit");
@@ -159,7 +155,7 @@ void ElectronSandboxedRendererClient::WillReleaseScriptContext(
 void ElectronSandboxedRendererClient::EmitProcessEvent(
     content::RenderFrame* render_frame,
     const char* event_name) {
-  if (!base::Contains(injected_frames_, render_frame))
+  if (!injected_frames_.contains(render_frame))
     return;
 
   blink::WebLocalFrame* frame = render_frame->GetWebFrame();
@@ -167,9 +163,8 @@ void ElectronSandboxedRendererClient::EmitProcessEvent(
   v8::HandleScope handle_scope{isolate};
 
   v8::Local<v8::Context> context = GetContext(frame, isolate);
-  gin_helper::MicrotasksScope microtasks_scope{
-      isolate, context->GetMicrotaskQueue(), false,
-      v8::MicrotasksScope::kDoNotRunMicrotasks};
+  v8::MicrotasksScope microtasks_scope(
+      context, v8::MicrotasksScope::kDoNotRunMicrotasks);
   v8::Context::Scope context_scope(context);
 
   InvokeEmitProcessEvent(context, event_name);

@@ -87,6 +87,7 @@ declare namespace Electron {
   }
 
   interface WebContents {
+    _awaitNextLoad(expectedUrl: string): Promise<void>;
     _loadURL(url: string, options: ElectronInternal.LoadURLOptions): void;
     getOwnerBrowserWindow(): Electron.BrowserWindow | null;
     getLastWebPreferences(): Electron.WebPreferences | null;
@@ -115,6 +116,7 @@ declare namespace Electron {
     _goToIndex(index: number): void;
     _removeNavigationEntryAtIndex(index: number): boolean;
     _getHistory(): Electron.NavigationEntry[];
+    _restoreHistory(index: number, entries: Electron.NavigationEntry[]): void
     _clearHistory():void
     canGoToIndex(index: number): boolean;
     destroy(): void;
@@ -130,6 +132,7 @@ declare namespace Electron {
     _send(internal: boolean, channel: string, args: any): void;
     _sendInternal(channel: string, ...args: any[]): void;
     _postMessage(channel: string, message: any, transfer?: any[]): void;
+    _lifecycleStateForTesting: string;
   }
 
   interface WebFrame {
@@ -163,7 +166,7 @@ declare namespace Electron {
     commandsMap: Record<string, MenuItem>;
     groupsMap: Record<string, MenuItem[]>;
     getItemCount(): number;
-    popupAt(window: BaseWindow, x: number, y: number, positioning: number, sourceType: Required<Electron.PopupOptions>['sourceType'], callback: () => void): void;
+    popupAt(window: BaseWindow, frame: WebFrameMain | undefined, x: number, y: number, positioning: number, sourceType: Required<Electron.PopupOptions>['sourceType'], callback: () => void): void;
     closePopupAt(id: number): void;
     setSublabel(index: number, label: string): void;
     setToolTip(index: number, tooltip: string): void;

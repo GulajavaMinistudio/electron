@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/task/single_thread_task_runner.h"
 #include "content/public/common/color_parser.h"
 #include "electron/buildflags/buildflags.h"
@@ -32,6 +31,7 @@
 #include "shell/common/gin_helper/object_template_builder.h"
 #include "shell/common/gin_helper/persistent_dictionary.h"
 #include "shell/common/node_includes.h"
+#include "shell/common/node_util.h"
 #include "shell/common/options_switches.h"
 
 #if defined(TOOLKIT_VIEWS)
@@ -71,13 +71,24 @@ namespace electron::api {
 
 namespace {
 
+#if !BUILDFLAG(IS_MAC)
 // Converts binary data to Buffer.
-v8::Local<v8::Value> ToBuffer(v8::Isolate* isolate, void* val, int size) {
-  auto buffer = node::Buffer::Copy(isolate, static_cast<char*>(val), size);
+v8::Local<v8::Value> ToBuffer(v8::Isolate* isolate,
+                              const base::span<const uint8_t> val) {
+  auto buffer = electron::Buffer::Copy(isolate, val);
   if (buffer.IsEmpty())
     return v8::Null(isolate);
   else
     return buffer.ToLocalChecked();
+}
+#endif
+
+[[nodiscard]] constexpr std::array<int, 2U> ToArray(const gfx::Size size) {
+  return {size.width(), size.height()};
+}
+
+[[nodiscard]] constexpr std::array<int, 2U> ToArray(const gfx::Point point) {
+  return {point.x(), point.y()};
 }
 
 }  // namespace
@@ -243,7 +254,7 @@ void BaseWindow::OnWindowRestore() {
 }
 
 void BaseWindow::OnWindowWillResize(const gfx::Rect& new_bounds,
-                                    const gfx::ResizeEdge& edge,
+                                    const gfx::ResizeEdge edge,
                                     bool* prevent_default) {
   v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
   v8::HandleScope handle_scope(isolate);
@@ -339,8 +350,8 @@ void BaseWindow::OnWindowMessage(UINT message, WPARAM w_param, LPARAM l_param) {
     v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
     v8::HandleScope scope(isolate);
     messages_callback_map_[message].Run(
-        ToBuffer(isolate, static_cast<void*>(&w_param), sizeof(WPARAM)),
-        ToBuffer(isolate, static_cast<void*>(&l_param), sizeof(LPARAM)));
+        ToBuffer(isolate, base::byte_span_from_ref(w_param)),
+        ToBuffer(isolate, base::byte_span_from_ref(l_param)));
   }
 }
 #endif
@@ -351,8 +362,7 @@ void BaseWindow::SetContentView(gin::Handle<View> view) {
 }
 
 void BaseWindow::CloseImmediately() {
-  if (!window_->IsClosed())
-    window_->CloseImmediately();
+  window_->CloseImmediately();
 }
 
 void BaseWindow::Close() {
@@ -468,12 +478,8 @@ void BaseWindow::SetSize(int width, int height, gin_helper::Arguments* args) {
   window_->SetSize(size, animate);
 }
 
-std::vector<int> BaseWindow::GetSize() const {
-  std::vector<int> result(2);
-  gfx::Size size = window_->GetSize();
-  result[0] = size.width();
-  result[1] = size.height();
-  return result;
+std::array<int, 2U> BaseWindow::GetSize() const {
+  return ToArray(window_->GetSize());
 }
 
 void BaseWindow::SetContentSize(int width,
@@ -484,36 +490,24 @@ void BaseWindow::SetContentSize(int width,
   window_->SetContentSize(gfx::Size(width, height), animate);
 }
 
-std::vector<int> BaseWindow::GetContentSize() const {
-  std::vector<int> result(2);
-  gfx::Size size = window_->GetContentSize();
-  result[0] = size.width();
-  result[1] = size.height();
-  return result;
+std::array<int, 2U> BaseWindow::GetContentSize() const {
+  return ToArray(window_->GetContentSize());
 }
 
 void BaseWindow::SetMinimumSize(int width, int height) {
   window_->SetMinimumSize(gfx::Size(width, height));
 }
 
-std::vector<int> BaseWindow::GetMinimumSize() const {
-  std::vector<int> result(2);
-  gfx::Size size = window_->GetMinimumSize();
-  result[0] = size.width();
-  result[1] = size.height();
-  return result;
+std::array<int, 2U> BaseWindow::GetMinimumSize() const {
+  return ToArray(window_->GetMinimumSize());
 }
 
 void BaseWindow::SetMaximumSize(int width, int height) {
   window_->SetMaximumSize(gfx::Size(width, height));
 }
 
-std::vector<int> BaseWindow::GetMaximumSize() const {
-  std::vector<int> result(2);
-  gfx::Size size = window_->GetMaximumSize();
-  result[0] = size.width();
-  result[1] = size.height();
-  return result;
+std::array<int, 2U> BaseWindow::GetMaximumSize() const {
+  return ToArray(window_->GetMaximumSize());
 }
 
 void BaseWindow::SetSheetOffset(double offsetY, gin_helper::Arguments* args) {
@@ -595,12 +589,8 @@ void BaseWindow::SetPosition(int x, int y, gin_helper::Arguments* args) {
   window_->SetPosition(gfx::Point(x, y), animate);
 }
 
-std::vector<int> BaseWindow::GetPosition() const {
-  std::vector<int> result(2);
-  gfx::Point pos = window_->GetPosition();
-  result[0] = pos.x();
-  result[1] = pos.y();
-  return result;
+std::array<int, 2U> BaseWindow::GetPosition() const {
+  return ToArray(window_->GetPosition());
 }
 void BaseWindow::MoveAbove(const std::string& sourceId,
                            gin_helper::Arguments* args) {
@@ -725,6 +715,10 @@ void BaseWindow::SetContentProtection(bool enable) {
   return window_->SetContentProtection(enable);
 }
 
+bool BaseWindow::IsContentProtected() const {
+  return window_->IsContentProtected();
+}
+
 void BaseWindow::SetFocusable(bool focusable) {
   return window_->SetFocusable(focusable);
 }
@@ -787,13 +781,15 @@ std::string BaseWindow::GetMediaSourceId() const {
   return window_->GetDesktopMediaID().ToString();
 }
 
+#if !BUILDFLAG(IS_MAC)
 v8::Local<v8::Value> BaseWindow::GetNativeWindowHandle() {
   // TODO(MarshallOfSound): Replace once
   // https://chromium-review.googlesource.com/c/chromium/src/+/1253094/ has
   // landed
   NativeWindowHandle handle = window_->GetNativeWindowHandle();
-  return ToBuffer(isolate(), &handle, sizeof(handle));
+  return ToBuffer(isolate(), base::byte_span_from_ref(handle));
 }
+#endif
 
 void BaseWindow::SetProgressBar(double progress, gin_helper::Arguments* args) {
   gin_helper::Dictionary options;
@@ -1052,7 +1048,7 @@ void BaseWindow::UnhookWindowMessage(UINT message) {
 }
 
 bool BaseWindow::IsWindowMessageHooked(UINT message) {
-  return base::Contains(messages_callback_map_, message);
+  return messages_callback_map_.contains(message);
 }
 
 void BaseWindow::UnhookAllWindowMessages() {
@@ -1087,6 +1083,10 @@ void BaseWindow::SetAppDetails(const gin_helper::Dictionary& options) {
   ui::win::SetAppDetailsForWindow(app_id, app_icon_path, app_icon_index,
                                   relaunch_command, relaunch_display_name,
                                   window_->GetAcceleratedWidget());
+}
+
+bool BaseWindow::IsSnapped() const {
+  return window_->IsSnapped();
 }
 #endif
 
@@ -1142,7 +1142,7 @@ void BaseWindow::SetTitleBarOverlay(const gin_helper::Dictionary& options,
   if (!updated)
     return;
 
-    // If anything was updated, ensure the overlay is repainted.
+  // If anything was updated, ensure the overlay is repainted.
 #if BUILDFLAG(IS_WIN)
   auto* frame_view = static_cast<WinFrameView*>(
       window->widget()->non_client_view()->frame_view());
@@ -1162,8 +1162,10 @@ void BaseWindow::RemoveFromParentChildWindows() {
   if (parent_window_.IsEmpty())
     return;
 
+  v8::Isolate* isolate = JavascriptEnvironment::GetIsolate();
+  v8::HandleScope handle_scope(isolate);
   gin::Handle<BaseWindow> parent;
-  if (!gin::ConvertFromV8(isolate(), GetParentWindow(), &parent) ||
+  if (!gin::ConvertFromV8(isolate, GetParentWindow(), &parent) ||
       parent.IsEmpty()) {
     return;
   }
@@ -1262,6 +1264,7 @@ void BaseWindow::BuildPrototype(v8::Isolate* isolate,
       .SetMethod("isDocumentEdited", &BaseWindow::IsDocumentEdited)
       .SetMethod("setIgnoreMouseEvents", &BaseWindow::SetIgnoreMouseEvents)
       .SetMethod("setContentProtection", &BaseWindow::SetContentProtection)
+      .SetMethod("_isContentProtected", &BaseWindow::IsContentProtected)
       .SetMethod("setFocusable", &BaseWindow::SetFocusable)
       .SetMethod("isFocusable", &BaseWindow::IsFocusable)
       .SetMethod("setMenu", &BaseWindow::SetMenu)
@@ -1331,6 +1334,8 @@ void BaseWindow::BuildPrototype(v8::Isolate* isolate,
       .SetMethod("setIcon", &BaseWindow::SetIcon)
 #endif
 #if BUILDFLAG(IS_WIN)
+      .SetMethod("isSnapped", &BaseWindow::IsSnapped)
+      .SetProperty("snapped", &BaseWindow::IsSnapped)
       .SetMethod("hookWindowMessage", &BaseWindow::HookWindowMessage)
       .SetMethod("isWindowMessageHooked", &BaseWindow::IsWindowMessageHooked)
       .SetMethod("unhookWindowMessage", &BaseWindow::UnhookWindowMessage)

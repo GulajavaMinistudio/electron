@@ -10,6 +10,23 @@
 
 namespace gin_helper {
 
+bool IsValidWrappable(const v8::Local<v8::Value>& val,
+                      const gin::WrapperInfo* wrapper_info) {
+  if (!val->IsObject())
+    return false;
+
+  v8::Local<v8::Object> port = val.As<v8::Object>();
+  if (port->InternalFieldCount() != gin::kNumberOfInternalFields)
+    return false;
+
+  const gin::WrapperInfo* info = static_cast<gin::WrapperInfo*>(
+      port->GetAlignedPointerFromInternalField(gin::kWrapperInfoIndex));
+  if (info != wrapper_info)
+    return false;
+
+  return true;
+}
+
 WrappableBase::WrappableBase() = default;
 
 WrappableBase::~WrappableBase() {
@@ -25,14 +42,6 @@ WrappableBase::~WrappableBase() {
 v8::Local<v8::Object> WrappableBase::GetWrapper() const {
   if (!wrapper_.IsEmpty())
     return v8::Local<v8::Object>::New(isolate_, wrapper_);
-  else
-    return {};
-}
-
-v8::MaybeLocal<v8::Object> WrappableBase::GetWrapper(
-    v8::Isolate* isolate) const {
-  if (!wrapper_.IsEmpty())
-    return {v8::Local<v8::Object>::New(isolate, wrapper_)};
   else
     return {};
 }

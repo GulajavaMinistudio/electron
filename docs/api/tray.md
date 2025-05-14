@@ -176,7 +176,8 @@ Returns:
 
 Emitted when the mouse is released from clicking the tray icon.
 
-Note: This will not be emitted if you have set a context menu for your Tray using `tray.setContextMenu`, as a result of macOS-level constraints.
+> [!NOTE]
+> This will not be emitted if you have set a context menu for your Tray using `tray.setContextMenu`, as a result of macOS-level constraints.
 
 #### Event: 'mouse-down' _macOS_
 
@@ -238,7 +239,7 @@ Sets the `image` associated with this tray icon when pressed on macOS.
 
 * `toolTip` string
 
-Sets the hover text for this tray icon.
+Sets the hover text for this tray icon. Setting the text to an empty string will remove the tooltip.
 
 #### `tray.setTitle(title[, options])` _macOS_
 

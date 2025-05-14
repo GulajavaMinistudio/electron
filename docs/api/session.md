@@ -651,7 +651,7 @@ Clears the session’s HTTP cache.
     `shadercache`, `websql`, `serviceworkers`, `cachestorage`. If not
     specified, clear all storage types.
   * `quotas` string[] (optional) - The types of quotas to clear, can be
-    `temporary`, `syncable`. If not specified, clear all quotas.
+    `temporary`. If not specified, clear all quotas.
 
 Returns `Promise<void>` - resolves when the storage data has been cleared.
 
@@ -762,7 +762,8 @@ Preconnects the given number of sockets to an origin.
 
 Returns `Promise<void>` - Resolves when all connections are closed.
 
-**Note:** It will terminate / fail all requests currently in flight.
+> [!NOTE]
+> It will terminate / fail all requests currently in flight.
 
 #### `ses.fetch(input[, init])`
 
@@ -933,6 +934,7 @@ session.fromPartition('some-partition').setPermissionRequestHandler((webContents
     * `storage-access` - Allows content loaded in a third-party context to request access to third-party cookies using the [Storage Access API](https://developer.mozilla.org/en-US/docs/Web/API/Storage_Access_API).
     * `top-level-storage-access` -  Allow top-level sites to request third-party cookie access on behalf of embedded content originating from another site in the same related website set using the [Storage Access API](https://developer.mozilla.org/en-US/docs/Web/API/Storage_Access_API).
     * `usb` - Expose non-standard Universal Serial Bus (USB) compatible devices services to the web with the [WebUSB API](https://developer.mozilla.org/en-US/docs/Web/API/WebUSB_API).
+    * `deprecated-sync-clipboard-read` _Deprecated_ - Request access to run `document.execCommand("paste")`
   * `requestingOrigin` string - The origin URL of the permission check
   * `details` Object - Some properties are only available on certain permission types.
     * `embeddingOrigin` string (optional) - The origin of the frame embedding the frame that made the permission check.  Only set for cross-origin sub frames making permission checks.
@@ -1304,8 +1306,9 @@ Initiates a download of the resource at `url`.
 The API will generate a [DownloadItem](download-item.md) that can be accessed
 with the [will-download](#event-will-download) event.
 
-**Note:** This does not perform any security checks that relate to a page's origin,
-unlike [`webContents.downloadURL`](web-contents.md#contentsdownloadurlurl-options).
+> [!NOTE]
+> This does not perform any security checks that relate to a page's origin,
+> unlike [`webContents.downloadURL`](web-contents.md#contentsdownloadurlurl-options).
 
 #### `ses.createInterruptedDownload(options)`
 
@@ -1433,7 +1436,8 @@ The built in spellchecker does not automatically detect what language a user is 
 spell checker to correctly check their words you must call this API with an array of language codes.  You can
 get the list of supported language codes with the `ses.availableSpellCheckerLanguages` property.
 
-**Note:** On macOS the OS spellchecker is used and will detect your language automatically.  This API is a no-op on macOS.
+> [!NOTE]
+> On macOS, the OS spellchecker is used and will detect your language automatically. This API is a no-op on macOS.
 
 #### `ses.getSpellCheckerLanguages()`
 
@@ -1441,7 +1445,8 @@ Returns `string[]` - An array of language codes the spellchecker is enabled for.
 will fallback to using `en-US`.  By default on launch if this setting is an empty list Electron will try to populate this
 setting with the current OS locale.  This setting is persisted across restarts.
 
-**Note:** On macOS the OS spellchecker is used and has its own list of languages. On macOS, this API will return whichever languages have been configured by the OS.
+> [!NOTE]
+> On macOS, the OS spellchecker is used and has its own list of languages. On macOS, this API will return whichever languages have been configured by the OS.
 
 #### `ses.setSpellCheckerDictionaryDownloadURL(url)`
 
@@ -1459,7 +1464,8 @@ If the files present in `hunspell_dictionaries.zip` are available at `https://ex
 then you should call this api with `ses.setSpellCheckerDictionaryDownloadURL('https://example.com/dictionaries/')`.  Please
 note the trailing slash.  The URL to the dictionaries is formed as `${url}${filename}`.
 
-**Note:** On macOS the OS spellchecker is used and therefore we do not download any dictionary files.  This API is a no-op on macOS.
+> [!NOTE]
+> On macOS, the OS spellchecker is used and therefore we do not download any dictionary files. This API is a no-op on macOS.
 
 #### `ses.listWordsInSpellCheckerDictionary()`
 
@@ -1473,7 +1479,8 @@ Resolves when the full dictionary is loaded from disk.
 Returns `boolean` - Whether the word was successfully written to the custom dictionary. This API
 will not work on non-persistent (in-memory) sessions.
 
-**Note:** On macOS and Windows 10 this word will be written to the OS custom dictionary as well
+> [!NOTE]
+> On macOS and Windows, this word will be written to the OS custom dictionary as well.
 
 #### `ses.removeWordFromSpellCheckerDictionary(word)`
 
@@ -1482,9 +1489,10 @@ will not work on non-persistent (in-memory) sessions.
 Returns `boolean` - Whether the word was successfully removed from the custom dictionary. This API
 will not work on non-persistent (in-memory) sessions.
 
-**Note:** On macOS and Windows 10 this word will be removed from the OS custom dictionary as well
+> [!NOTE]
+> On macOS and Windows, this word will be removed from the OS custom dictionary as well.
 
-#### `ses.loadExtension(path[, options])`
+#### `ses.loadExtension(path[, options])` _Deprecated_
 
 * `path` string - Path to a directory containing an unpacked Chrome extension
 * `options` Object (optional)
@@ -1525,36 +1533,49 @@ app.whenReady().then(async () => {
 
 This API does not support loading packed (.crx) extensions.
 
-**Note:** This API cannot be called before the `ready` event of the `app` module
-is emitted.
+> [!NOTE]
+> This API cannot be called before the `ready` event of the `app` module
+> is emitted.
 
-**Note:** Loading extensions into in-memory (non-persistent) sessions is not
-supported and will throw an error.
+> [!NOTE]
+> Loading extensions into in-memory (non-persistent) sessions is not
+> supported and will throw an error.
 
-#### `ses.removeExtension(extensionId)`
+**Deprecated:** Use the new `ses.extensions.loadExtension` API.
+
+#### `ses.removeExtension(extensionId)` _Deprecated_
 
 * `extensionId` string - ID of extension to remove
 
 Unloads an extension.
 
-**Note:** This API cannot be called before the `ready` event of the `app` module
-is emitted.
+> [!NOTE]
+> This API cannot be called before the `ready` event of the `app` module
+> is emitted.
 
-#### `ses.getExtension(extensionId)`
+**Deprecated:** Use the new `ses.extensions.removeExtension` API.
+
+#### `ses.getExtension(extensionId)` _Deprecated_
 
 * `extensionId` string - ID of extension to query
 
 Returns `Extension | null` - The loaded extension with the given ID.
 
-**Note:** This API cannot be called before the `ready` event of the `app` module
-is emitted.
+> [!NOTE]
+> This API cannot be called before the `ready` event of the `app` module
+> is emitted.
 
-#### `ses.getAllExtensions()`
+**Deprecated:** Use the new `ses.extensions.getExtension` API.
+
+#### `ses.getAllExtensions()` _Deprecated_
 
 Returns `Extension[]` - A list of all loaded extensions.
 
-**Note:** This API cannot be called before the `ready` event of the `app` module
-is emitted.
+> [!NOTE]
+> This API cannot be called before the `ready` event of the `app` module
+> is emitted.
+
+**Deprecated:** Use the new `ses.extensions.getAllExtensions` API.
 
 #### `ses.getStoragePath()`
 
@@ -1590,9 +1611,11 @@ Clears various different types of data.
 This method clears more types of data and is more thorough than the
 `clearStorageData` method.
 
-**Note:** Cookies are stored at a broader scope than origins. When removing cookies and filtering by `origins` (or `excludeOrigins`), the cookies will be removed at the [registrable domain](https://url.spec.whatwg.org/#host-registrable-domain) level. For example, clearing cookies for the origin `https://really.specific.origin.example.com/` will end up clearing all cookies for `example.com`. Clearing cookies for the origin `https://my.website.example.co.uk/` will end up clearing all cookies for `example.co.uk`.
+> [!NOTE]
+> Cookies are stored at a broader scope than origins. When removing cookies and filtering by `origins` (or `excludeOrigins`), the cookies will be removed at the [registrable domain](https://url.spec.whatwg.org/#host-registrable-domain) level. For example, clearing cookies for the origin `https://really.specific.origin.example.com/` will end up clearing all cookies for `example.com`. Clearing cookies for the origin `https://my.website.example.co.uk/` will end up clearing all cookies for `example.co.uk`.
 
-**Note:** Clearing cache data will also clear the shared dictionary cache. This means that any dictionaries used for compression may be reloaded after clearing the cache. If you wish to clear the shared dictionary cache but leave other cached data intact, you may want to use the `clearSharedDictionaryCache` method.
+> [!NOTE]
+> Clearing cache data will also clear the shared dictionary cache. This means that any dictionaries used for compression may be reloaded after clearing the cache. If you wish to clear the shared dictionary cache but leave other cached data intact, you may want to use the `clearSharedDictionaryCache` method.
 
 For more information, refer to Chromium's [`BrowsingDataRemover` interface][browsing-data-remover].
 
@@ -1617,6 +1640,10 @@ session is persisted on disk.  For in memory sessions this returns `null`.
 #### `ses.cookies` _Readonly_
 
 A [`Cookies`](cookies.md) object for this session.
+
+#### `ses.extensions` _Readonly_
+
+A [`Extensions`](extensions-api.md) object for this session.
 
 #### `ses.serviceWorkers` _Readonly_
 

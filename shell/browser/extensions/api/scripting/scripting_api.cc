@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/check.h"
-#include "base/containers/contains.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -471,7 +470,9 @@ ExtensionFunction::ResponseAction ScriptingExecuteScriptFunction::Run() {
     constexpr bool kRequiresLocalization = false;
     std::string error;
     if (!CheckAndLoadFiles(
-            std::move(*injection_.files), *extension(), kRequiresLocalization,
+            std::move(*injection_.files),
+            script_parsing::ContentScriptType::kJs, *extension(),
+            kRequiresLocalization,
             base::BindOnce(&ScriptingExecuteScriptFunction::DidLoadResources,
                            this),
             &error)) {
@@ -610,7 +611,9 @@ ExtensionFunction::ResponseAction ScriptingInsertCSSFunction::Run() {
     constexpr bool kRequiresLocalization = true;
     std::string error;
     if (!CheckAndLoadFiles(
-            std::move(*injection_.files), *extension(), kRequiresLocalization,
+            std::move(*injection_.files),
+            script_parsing::ContentScriptType::kCss, *extension(),
+            kRequiresLocalization,
             base::BindOnce(&ScriptingInsertCSSFunction::DidLoadResources, this),
             &error)) {
       return RespondNow(Error(std::move(error)));
@@ -724,8 +727,9 @@ ExtensionFunction::ResponseAction ScriptingRemoveCSSFunction::Run() {
 
   if (injection.files) {
     std::vector<ExtensionResource> resources;
-    if (!scripting::GetFileResources(*injection.files, *extension(), &resources,
-                                     &error)) {
+    if (!scripting::GetFileResources(*injection.files,
+                                     script_parsing::ContentScriptType::kCss,
+                                     *extension(), &resources, &error)) {
       return RespondNow(Error(std::move(error)));
     }
 
@@ -947,13 +951,13 @@ ScriptingGetRegisteredContentScriptsFunction::Run() {
       continue;
     }
 
-    if (!id_filter.empty() && !base::Contains(id_filter, script->id())) {
+    if (!id_filter.empty() && !id_filter.contains(script->id())) {
       continue;
     }
 
     auto registered_script = CreateRegisteredContentScriptInfo(*script);
     registered_script.persist_across_sessions =
-        base::Contains(persistent_script_ids, script->id());
+        persistent_script_ids.contains(script->id());
 
     // Remove the internally used prefix from the `script`'s ID before
     // returning.
@@ -1123,7 +1127,7 @@ std::unique_ptr<UserScript> ScriptingUpdateContentScriptsFunction::ApplyUpdate(
   // original script is persisted and the flag is not specified.
   if (new_script.persist_across_sessions.value_or(false) ||
       (!new_script.persist_across_sessions &&
-       base::Contains(*script_ids_to_persist, new_script.id))) {
+       script_ids_to_persist->contains(new_script.id))) {
     script_ids_to_persist->insert(new_script.id);
   }
 

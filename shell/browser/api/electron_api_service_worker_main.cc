@@ -5,21 +5,19 @@
 #include "shell/browser/api/electron_api_service_worker_main.h"
 
 #include <string>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"  // nogncheck
 #include "content/browser/service_worker/service_worker_version.h"  // nogncheck
-#include "electron/shell/common/api/api.mojom.h"
 #include "gin/handle.h"
 #include "gin/object_template_builder.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "shell/browser/api/message_port.h"
 #include "shell/browser/browser.h"
 #include "shell/browser/javascript_environment.h"
+#include "shell/common/api/api.mojom.h"
 #include "shell/common/gin_converters/blink_converter.h"
 #include "shell/common/gin_converters/gurl_converter.h"
 #include "shell/common/gin_converters/value_converter.h"
@@ -29,6 +27,7 @@
 #include "shell/common/gin_helper/promise.h"
 #include "shell/common/node_includes.h"
 #include "shell/common/v8_util.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 
 namespace {
 
@@ -59,10 +58,9 @@ std::optional<content::ServiceWorkerVersionBaseInfo> GetLiveVersionInfo(
 namespace electron::api {
 
 // ServiceWorkerKey -> ServiceWorkerMain*
-typedef std::unordered_map<ServiceWorkerKey,
-                           ServiceWorkerMain*,
-                           ServiceWorkerKey::Hasher>
-    VersionIdMap;
+using VersionIdMap = absl::flat_hash_map<ServiceWorkerKey,
+                                         ServiceWorkerMain*,
+                                         ServiceWorkerKey::Hasher>;
 
 VersionIdMap& GetVersionIdMap() {
   static base::NoDestructor<VersionIdMap> instance;
@@ -192,7 +190,7 @@ bool ServiceWorkerMain::IsDestroyed() const {
 }
 
 const blink::StorageKey ServiceWorkerMain::GetStorageKey() {
-  GURL scope = version_info_ ? version_info()->scope : GURL::EmptyGURL();
+  const GURL& scope = version_info_ ? version_info()->scope : GURL::EmptyGURL();
   return blink::StorageKey::CreateFirstParty(url::Origin::Create(scope));
 }
 
@@ -279,8 +277,14 @@ int64_t ServiceWorkerMain::VersionID() const {
 
 GURL ServiceWorkerMain::ScopeURL() const {
   if (version_destroyed_)
-    return GURL::EmptyGURL();
+    return {};
   return version_info()->scope;
+}
+
+GURL ServiceWorkerMain::ScriptURL() const {
+  if (version_destroyed_)
+    return {};
+  return version_info()->script_url;
 }
 
 // static
@@ -331,6 +335,7 @@ void ServiceWorkerMain::FillObjectTemplate(
                  &ServiceWorkerMain::CountExternalRequestsForTest)
       .SetProperty("versionId", &ServiceWorkerMain::VersionID)
       .SetProperty("scope", &ServiceWorkerMain::ScopeURL)
+      .SetProperty("scriptURL", &ServiceWorkerMain::ScriptURL)
       .Build();
 }
 

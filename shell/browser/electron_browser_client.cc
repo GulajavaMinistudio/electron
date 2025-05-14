@@ -36,6 +36,7 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/login_delegate.h"
+#include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/overlay_window.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -53,7 +54,6 @@
 #include "crypto/crypto_buildflags.h"
 #include "electron/buildflags/buildflags.h"
 #include "electron/fuses.h"
-#include "electron/shell/common/api/api.mojom.h"
 #include "extensions/browser/extension_navigation_ui_data.h"
 #include "extensions/common/extension_id.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
@@ -118,6 +118,7 @@
 #include "shell/common/platform_util.h"
 #include "shell/common/plugin.mojom.h"
 #include "shell/common/thread_restrictions.h"
+#include "shell/common/web_contents_utility.mojom.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/common/loader/url_loader_throttle.h"
 #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
@@ -379,7 +380,7 @@ content::SiteInstance* ElectronBrowserClient::GetSiteInstanceFromAffinity(
 
 bool ElectronBrowserClient::IsRendererSubFrame(
     content::ChildProcessId process_id) const {
-  return base::Contains(renderer_is_subframe_, process_id);
+  return renderer_is_subframe_.contains(process_id);
 }
 
 void ElectronBrowserClient::RenderProcessWillLaunch(
@@ -411,7 +412,6 @@ void ElectronBrowserClient::OverrideWebPreferences(
   prefs->javascript_can_access_clipboard = false;
   prefs->allow_scripts_to_close_windows = true;
   prefs->local_storage_enabled = true;
-  prefs->databases_enabled = true;
   prefs->allow_universal_access_from_file_urls =
       electron::fuses::IsGrantFileProtocolExtraPrivilegesEnabled();
   prefs->allow_file_access_from_file_urls =
@@ -446,13 +446,13 @@ void ElectronBrowserClient::RegisterPendingSiteInstance(
     content::SiteInstance* pending_site_instance) {
   // Remember the original web contents for the pending renderer process.
   auto* web_contents = content::WebContents::FromRenderFrameHost(rfh);
-  auto* pending_process = pending_site_instance->GetProcess();
-  pending_processes_[pending_process->GetID()] = web_contents;
+  const auto pending_process_id = pending_site_instance->GetProcess()->GetID();
+  pending_processes_[pending_process_id] = web_contents;
 
   if (rfh->GetParent())
-    renderer_is_subframe_.insert(pending_process->GetID());
+    renderer_is_subframe_.insert(pending_process_id);
   else
-    renderer_is_subframe_.erase(pending_process->GetID());
+    renderer_is_subframe_.erase(pending_process_id);
 }
 
 void ElectronBrowserClient::AppendExtraCommandLineSwitches(
@@ -600,8 +600,7 @@ void ElectronBrowserClient::AppendExtraCommandLineSwitches(
 // attempt to get api key from env
 std::string ElectronBrowserClient::GetGeolocationApiKey() {
   auto env = base::Environment::Create();
-  std::string api_key;
-  env->GetVar("GOOGLE_API_KEY", &api_key);
+  std::string api_key = env->GetVar("GOOGLE_API_KEY").value_or("");
   return api_key;
 }
 
@@ -953,24 +952,23 @@ bool ElectronBrowserClient::HandleExternalProtocol(
   return true;
 }
 
-std::vector<std::unique_ptr<content::NavigationThrottle>>
-ElectronBrowserClient::CreateThrottlesForNavigation(
-    content::NavigationHandle* handle) {
-  std::vector<std::unique_ptr<content::NavigationThrottle>> throttles;
-  throttles.push_back(std::make_unique<ElectronNavigationThrottle>(handle));
+void ElectronBrowserClient::CreateThrottlesForNavigation(
+    content::NavigationThrottleRegistry& registry) {
+  content::NavigationHandle* handle = &registry.GetNavigationHandle();
+  registry.MaybeAddThrottle(
+      std::make_unique<ElectronNavigationThrottle>(handle));
 
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
-  throttles.push_back(
+  registry.MaybeAddThrottle(
       std::make_unique<extensions::ExtensionNavigationThrottle>(handle));
 #endif
 
 #if BUILDFLAG(ENABLE_PDF_VIEWER)
-  throttles.push_back(std::make_unique<PDFIFrameNavigationThrottle>(handle));
-  throttles.push_back(std::make_unique<pdf::PdfNavigationThrottle>(
+  registry.MaybeAddThrottle(
+      std::make_unique<PDFIFrameNavigationThrottle>(handle));
+  registry.MaybeAddThrottle(std::make_unique<pdf::PdfNavigationThrottle>(
       handle, std::make_unique<ChromePdfStreamDelegate>()));
 #endif
-
-  return throttles;
 }
 
 content::MediaObserver* ElectronBrowserClient::GetMediaObserver() {
@@ -1074,6 +1072,12 @@ void ElectronBrowserClient::
   // reason for it, and we could consider supporting it in future.
   protocol_registry->RegisterURLLoaderFactories(factories,
                                                 false /* allow_file_access */);
+#if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
+  factories->emplace(
+      extensions::kExtensionScheme,
+      extensions::CreateExtensionWorkerMainResourceURLLoaderFactory(
+          browser_context));
+#endif
 }
 
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
@@ -1399,6 +1403,7 @@ void ElectronBrowserClient::OverrideURLLoaderFactoryParams(
     content::BrowserContext* browser_context,
     const url::Origin& origin,
     bool is_for_isolated_world,
+    bool is_for_service_worker,
     network::mojom::URLLoaderFactoryParams* factory_params) {
   if (factory_params->top_frame_id) {
     // Bypass CORB and CORS when web security is disabled.
@@ -1415,7 +1420,8 @@ void ElectronBrowserClient::OverrideURLLoaderFactoryParams(
   }
 #if BUILDFLAG(ENABLE_ELECTRON_EXTENSIONS)
   extensions::URLLoaderFactoryManager::OverrideURLLoaderFactoryParams(
-      browser_context, origin, is_for_isolated_world, factory_params);
+      browser_context, origin, is_for_isolated_world, is_for_service_worker,
+      factory_params);
 #endif
 }
 
@@ -1679,7 +1685,7 @@ ElectronBrowserClient::CreateLoginDelegate(
     scoped_refptr<net::HttpResponseHeaders> response_headers,
     bool first_auth_attempt,
     content::GuestPageHolder* guest_page_holder,
-    LoginAuthRequiredCallback auth_required_callback) {
+    content::LoginDelegate::LoginAuthRequiredCallback auth_required_callback) {
   return std::make_unique<LoginHandler>(
       auth_info, web_contents, is_request_for_primary_main_frame,
       is_request_for_navigation, base::kNullProcessId, url, response_headers,

@@ -5,12 +5,9 @@
 #ifndef ELECTRON_SHELL_BROWSER_API_ELECTRON_API_SERVICE_WORKER_MAIN_H_
 #define ELECTRON_SHELL_BROWSER_API_ELECTRON_API_SERVICE_WORKER_MAIN_H_
 
-#include <optional>
 #include <string>
-#include <vector>
 
 #include "base/memory/raw_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/service_worker_context.h"
@@ -149,6 +146,7 @@ class ServiceWorkerMain final
 
   int64_t VersionID() const;
   GURL ScopeURL() const;
+  GURL ScriptURL() const;
 
   // Version ID unique only to the StoragePartition.
   int64_t version_id_;
@@ -169,8 +167,6 @@ class ServiceWorkerMain final
   mojo::AssociatedRemote<mojom::ElectronRenderer> remote_;
 
   std::unique_ptr<gin_helper::Promise<void>> start_worker_promise_;
-
-  base::WeakPtrFactory<ServiceWorkerMain> weak_factory_{this};
 };
 
 }  // namespace electron::api

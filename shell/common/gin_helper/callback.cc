@@ -54,8 +54,7 @@ void CallTranslator(v8::Local<v8::External> external,
       args->ThrowTypeError("One-time callback was called more than once");
       return;
     } else {
-      state->Set(context, called_symbol, v8::Boolean::New(isolate, true))
-          .ToChecked();
+      state->Set(context, called_symbol, v8::True(isolate)).ToChecked();
     }
   }
 
@@ -75,8 +74,7 @@ struct DeleteOnUIThread {
   static void Destruct(const T* x) {
     if (electron::IsBrowserProcess() &&
         !content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
-      content::BrowserThread::DeleteSoon(content::BrowserThread::UI, FROM_HERE,
-                                         x);
+      content::GetUIThreadTaskRunner({})->DeleteSoon(FROM_HERE, x);
     } else {
       delete x;
     }

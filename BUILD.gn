@@ -17,19 +17,19 @@ import("//tools/grit/repack.gni")
 import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
 import("//v8/gni/snapshot_toolchain.gni")
 import("build/asar.gni")
+import("build/electron_paks.gni")
 import("build/extract_symbols.gni")
+import("build/js2c_toolchain.gni")
 import("build/npm.gni")
 import("build/templated_file.gni")
 import("build/tsc.gni")
 import("build/webpack/webpack.gni")
 import("buildflags/buildflags.gni")
-import("electron_paks.gni")
 import("filenames.auto.gni")
 import("filenames.gni")
 import("filenames.hunspell.gni")
 import("filenames.libcxx.gni")
 import("filenames.libcxxabi.gni")
-import("js2c_toolchain.gni")
 
 if (is_mac) {
   import("//build/config/mac/rules.gni")
@@ -314,7 +314,7 @@ asar("default_app_asar") {
 }
 
 grit("resources") {
-  source = "electron_resources.grd"
+  source = "build/electron_resources.grd"
 
   outputs = [
     "grit/electron_resources.h",
@@ -441,6 +441,7 @@ source_set("electron_lib") {
     "chromium_src:chrome_spellchecker",
     "shell/common:mojo",
     "shell/common:plugin",
+    "shell/common:web_contents_utility",
     "shell/services/node/public/mojom",
     "//base:base_static",
     "//base/allocator:buildflags",
@@ -450,7 +451,7 @@ source_set("electron_lib") {
     "//components/autofill/core/common:features",
     "//components/certificate_transparency",
     "//components/compose:buildflags",
-    "//components/embedder_support:browser_util",
+    "//components/embedder_support:user_agent",
     "//components/input:input",
     "//components/language/core/browser",
     "//components/net_log",
@@ -669,6 +670,8 @@ source_set("electron_lib") {
     sources += [
       "shell/browser/certificate_manager_model.cc",
       "shell/browser/certificate_manager_model.h",
+      "shell/browser/linux/x11_util.cc",
+      "shell/browser/linux/x11_util.h",
       "shell/browser/ui/gtk_util.cc",
       "shell/browser/ui/gtk_util.h",
     ]
@@ -1245,7 +1248,7 @@ if (is_mac) {
         "//components/crash/core/app:run_as_crashpad_handler",
       ]
 
-      ldflags = []
+      ldflags = [ "/DELAYLOAD:ffmpeg.dll" ]
 
       libs = [
         "comctl32.lib",
