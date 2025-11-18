@@ -1,3 +1,5 @@
+/// <reference types="webpack/module" />
+
 declare const BUILDFLAG: (flag: boolean) => boolean;
 
 declare namespace NodeJS {
@@ -133,7 +135,8 @@ declare namespace NodeJS {
 
   interface WebFrameMainBinding {
     WebFrameMain: typeof Electron.WebFrameMain;
-    fromId(processId: number, routingId: number): Electron.WebFrameMain;
+    fromId(processId: number, routingId: number): Electron.WebFrameMain | undefined;
+    fromFrameToken(processId: number, frameToken: string): Electron.WebFrameMain | null;
     _fromIdIfExists(processId: number, routingId: number): Electron.WebFrameMain | null;
     _fromFtnIdIfExists(frameTreeNodeId: number): Electron.WebFrameMain | null;
   }
@@ -147,12 +150,13 @@ declare namespace NodeJS {
 
   interface InternalWebFrame extends Electron.WebFrame {
     getWebPreference<K extends keyof InternalWebPreferences>(name: K): InternalWebPreferences[K];
-    getWebFrameId(window: Window): number;
+    _findFrameByWindow(window: Window): Electron.WebFrame | null;
     allowGuestViewElementDefinition(context: object, callback: Function): void;
   }
 
   interface WebFrameBinding {
     mainFrame: InternalWebFrame;
+    WebFrame: Electron.WebFrame;
   }
 
   type DataPipe = {
@@ -177,6 +181,8 @@ declare namespace NodeJS {
     mode?: string;
     destination?: string;
     bypassCustomProtocolHandlers?: boolean;
+    priority?: 'throttled' | 'idle' | 'lowest' | 'low' | 'medium' | 'highest';
+    priorityIncremental?: boolean;
   };
   type ResponseHead = {
     statusCode: number;
@@ -217,6 +223,7 @@ declare namespace NodeJS {
     _linkedBinding(name: 'electron_common_environment'): EnvironmentBinding;
     _linkedBinding(name: 'electron_common_features'): FeaturesBinding;
     _linkedBinding(name: 'electron_common_native_image'): { nativeImage: typeof Electron.NativeImage };
+    _linkedBinding(name: 'electron_common_shared_texture'): Electron.SharedTextureSubtle;
     _linkedBinding(name: 'electron_common_net'): NetBinding;
     _linkedBinding(name: 'electron_common_shell'): Electron.Shell;
     _linkedBinding(name: 'electron_common_v8_util'): V8UtilBinding;
@@ -277,7 +284,7 @@ declare module NodeJS {
 interface ContextMenuItem {
   id: number;
   label: string;
-  type: 'normal' | 'separator' | 'subMenu' | 'checkbox';
+  type: 'normal' | 'separator' | 'subMenu' | 'checkbox' | 'header' | 'palette';
   checked: boolean;
   enabled: boolean;
   subItems: ContextMenuItem[];

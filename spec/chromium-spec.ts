@@ -343,12 +343,12 @@ describe('web security', () => {
             });
           }
         </script>`);
-      return await w.webContents.executeJavaScript('loadWasm()');
+      return (await w.webContents.executeJavaScript('loadWasm()')).trim();
     }
 
     it('wasm codegen is disallowed by default', async () => {
       const r = await loadWasm('');
-      expect(r).to.equal('WebAssembly.instantiate(): Refused to compile or instantiate WebAssembly module because \'unsafe-eval\' is not an allowed source of script in the following Content Security Policy directive: "script-src \'self\' \'unsafe-inline\'"');
+      expect(r).to.equal('WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because \'unsafe-eval\' is not an allowed source of script in the following Content Security Policy directive:');
     });
 
     it('wasm codegen is allowed with "wasm-unsafe-eval" csp', async () => {
@@ -381,7 +381,7 @@ describe('web security', () => {
               }
             </script>`);
               const [{ message }] = await once(w.webContents, 'console-message');
-              expect(message).to.match(/Refused to evaluate a string/);
+              expect(message).to.match(/Evaluating a string as JavaScript violates/);
             });
 
             it('does not prevent eval from running in an inline script when there is no csp', async () => {
@@ -567,7 +567,14 @@ describe('command line switches', () => {
     });
 
     it('creates startup trace', async () => {
-      const rc = await startRemoteControlApp(['--trace-startup=*', `--trace-startup-file=${outputFilePath}`, '--trace-startup-duration=1', '--enable-logging']);
+      // node.async_hooks relies on %trace builtin to log trace points from JS
+      // https://github.com/nodejs/node/blob/8b199eef3dd4de910a6521adc42ae611a62a19e1/lib/internal/trace_events_async_hooks.js#L48-L53
+      // The phase event arg TRACE_EVENT_PHASE_NESTABLE_ASYNC_(BEGIN | END) is not supported in v8_use_perfetto mode
+      // https://source.chromium.org/chromium/chromium/src/+/main:v8/src/builtins/builtins-trace.cc;l=201-216
+      // and leads to the following error: TypeError: Trace event phase must be a number.
+      // TODO: Identify why the error started appearing with roll https://github.com/electron/electron/pull/47561
+      // given both v8_use_perfetto has been enabled before the roll and builtins-trace macro hasn't changed.
+      const rc = await startRemoteControlApp(['--trace-startup="*,-node.async_hooks"', `--trace-startup-file=${outputFilePath}`, '--trace-startup-duration=1', '--enable-logging']);
       const stderrComplete = new Promise<string>(resolve => {
         let stderr = '';
         rc.process.stderr!.on('data', (chunk) => {
@@ -891,16 +898,84 @@ describe('chromium features', () => {
       expect(position).to.have.property('coords');
       expect(position).to.have.property('timestamp');
     });
+
+    ifdescribe(process.platform === 'darwin')('with --disable-geolocation', () => {
+      const testSwitchBehavior = (handlerAction: 'allow' | 'deny' | 'none') => async () => {
+        const rc = await startRemoteControlApp([
+          '--disable-geolocation',
+          `--boot-eval=fixturesPath=${JSON.stringify(fixturesPath)}`
+        ]);
+
+        const result = await rc.remotely(async (action: typeof handlerAction) => {
+          const { session, BrowserWindow } = require('electron');
+          const path = require('node:path');
+
+          // Isolate each test's permissions to prevent permission state leaks between the test variations
+          const testSession = session.fromPartition(`geolocation-disable-${action}`);
+
+          if (action !== 'none') {
+            // Make the PermissionRequestHandler behave according to action variable passed for this test
+            testSession.setPermissionRequestHandler((_wc: Electron.WebContents, permission: string, callback: (allow: boolean) => void) => {
+              if (permission === 'geolocation') {
+                if (action === 'allow') callback(true);
+                else if (action === 'deny') callback(false);
+                else callback(false);
+              }
+            });
+          }
+
+          const w = new BrowserWindow({
+            show: false,
+            webPreferences: {
+              session: testSession,
+              nodeIntegration: true,
+              contextIsolation: false
+            }
+          });
+
+          await w.loadFile(path.join(fixturesPath, 'pages', 'blank.html'));
+
+          const permissionState = await w.webContents.executeJavaScript(`
+            navigator.permissions.query({ name: 'geolocation' })
+              .then(status => status.state)
+              .catch(() => 'error')
+          `);
+
+          const geoResult = await w.webContents.executeJavaScript(`
+            new Promise(resolve => {
+              navigator.geolocation.getCurrentPosition(
+                () => resolve('allowed'),
+                err => resolve(err.code)
+              );
+            })
+          `);
+
+          return { permissionState, geoResult };
+        }, handlerAction);
+
+        // Always expect status to be denied regardless of the decision made by a handler set via `session.setPermissionRequestHandler`
+        expect(result.permissionState).to.equal('denied', `Unexpected permission state for ${handlerAction} handler`);
+
+        // 1 = PERMISSION_DENIED
+        expect(result.geoResult).to.equal(1, `Unexpected API result for ${handlerAction} handler`);
+      };
+
+      it('denies geolocation when permission request handler would allow', testSwitchBehavior('allow'));
+      it('denies geolocation when permission request handler would deny', testSwitchBehavior('deny'));
+      it('denies geolocation with no permission request handler', testSwitchBehavior('none'));
+    });
   });
 
   describe('File System API,', () => {
-    afterEach(closeAllWindows);
+    let w: BrowserWindow | null = null;
+
     afterEach(() => {
       session.defaultSession.setPermissionRequestHandler(null);
+      closeAllWindows();
     });
 
     it('allows access by default to reading an OPFS file', async () => {
-      const w = new BrowserWindow({
+      w = new BrowserWindow({
         show: false,
         webPreferences: {
           nodeIntegration: true,
@@ -922,7 +997,7 @@ describe('chromium features', () => {
     });
 
     it('fileHandle.queryPermission by default has permission to read and write to OPFS files', async () => {
-      const w = new BrowserWindow({
+      w = new BrowserWindow({
         show: false,
         webPreferences: {
           nodeIntegration: true,
@@ -944,7 +1019,8 @@ describe('chromium features', () => {
     });
 
     it('fileHandle.requestPermission automatically grants permission to read and write to OPFS files', async () => {
-      const w = new BrowserWindow({
+      w = new BrowserWindow({
+        show: false,
         webPreferences: {
           nodeIntegration: true,
           partition: 'file-system-spec',
@@ -964,8 +1040,8 @@ describe('chromium features', () => {
       expect(status).to.equal('granted');
     });
 
-    it('requests permission when trying to create a writable file handle', (done) => {
-      const writablePath = path.join(fixturesPath, 'file-system', 'test-writable.html');
+    it('allows permission when trying to create a writable file handle', (done) => {
+      const writablePath = path.join(fixturesPath, 'file-system', 'test-perms.html');
       const testFile = path.join(fixturesPath, 'file-system', 'test.txt');
 
       const w = new BrowserWindow({
@@ -993,9 +1069,9 @@ describe('chromium features', () => {
 
       ipcMain.once('did-create-file-handle', async () => {
         const result = await w.webContents.executeJavaScript(`
-          new Promise((resolve, reject) => {
+          new Promise(async (resolve, reject) => {
             try {
-              const writable = fileHandle.createWritable();
+              const writable = await handle.createWritable();
               resolve(true);
             } catch {
               resolve(false);
@@ -1009,6 +1085,258 @@ describe('chromium features', () => {
       w.loadFile(writablePath);
 
       w.webContents.once('did-finish-load', () => {
+        // @ts-expect-error Undocumented testing method.
+        clipboard._writeFilesForTesting([testFile]);
+        w.webContents.paste();
+      });
+    });
+
+    it('denies permission when trying to create a writable file handle', (done) => {
+      const writablePath = path.join(fixturesPath, 'file-system', 'test-perms.html');
+      const testFile = path.join(fixturesPath, 'file-system', 'test.txt');
+
+      const w = new BrowserWindow({
+        webPreferences: {
+          nodeIntegration: true,
+          contextIsolation: false,
+          sandbox: false
+        }
+      });
+
+      w.webContents.session.setPermissionRequestHandler((wc, permission, callback, details) => {
+        expect(permission).to.equal('fileSystem');
+
+        const { href } = url.pathToFileURL(writablePath);
+        expect(details).to.deep.equal({
+          fileAccessType: 'writable',
+          isDirectory: false,
+          isMainFrame: true,
+          filePath: testFile,
+          requestingUrl: href
+        });
+
+        callback(false);
+      });
+
+      ipcMain.once('did-create-file-handle', async () => {
+        const result = await w.webContents.executeJavaScript(`
+          new Promise(async (resolve, reject) => {
+            try {
+              const writable = await handle.createWritable();
+              resolve(true);
+            } catch {
+              resolve(false);
+            }
+          })
+        `, true);
+        expect(result).to.be.false();
+        done();
+      });
+
+      w.loadFile(writablePath);
+
+      w.webContents.once('did-finish-load', () => {
+        // @ts-expect-error Undocumented testing method.
+        clipboard._writeFilesForTesting([testFile]);
+        w.webContents.paste();
+      });
+    });
+
+    it('calls twice when trying to query a read/write file handle permissions', (done) => {
+      const writablePath = path.join(fixturesPath, 'file-system', 'test-perms.html');
+      const testFile = path.join(fixturesPath, 'file-system', 'test.txt');
+
+      const w = new BrowserWindow({
+        webPreferences: {
+          nodeIntegration: true,
+          contextIsolation: false,
+          sandbox: false
+        }
+      });
+
+      let calls = 0;
+      w.webContents.session.setPermissionCheckHandler((wc, permission, origin, details) => {
+        if (permission === 'fileSystem') {
+          const { fileAccessType, isDirectory, filePath } = details;
+          expect(['writable', 'readable']).to.contain(fileAccessType);
+          expect(isDirectory).to.be.false();
+          expect(filePath).to.equal(testFile);
+          calls++;
+          return true;
+        }
+
+        return false;
+      });
+
+      ipcMain.once('did-create-file-handle', async () => {
+        const permission = await w.webContents.executeJavaScript(`
+          new Promise(async (resolve, reject) => {
+            try {
+              const permission = await handle.queryPermission({ mode: 'readwrite' });
+              resolve(permission);
+            } catch {
+              resolve('denied');
+            }
+          })
+        `, true);
+        expect(permission).to.equal('granted');
+        expect(calls).to.equal(2);
+        done();
+      });
+
+      w.loadFile(writablePath);
+
+      w.webContents.once('did-finish-load', () => {
+        // @ts-expect-error Undocumented testing method.
+        clipboard._writeFilesForTesting([testFile]);
+        w.webContents.paste();
+      });
+    });
+
+    it('correctly denies permissions after creating a readable directory handle', (done) => {
+      const permPath = path.join(fixturesPath, 'file-system', 'test-perms.html');
+      const testDir = path.join(fixturesPath, 'file-system');
+
+      const w = new BrowserWindow({
+        webPreferences: {
+          nodeIntegration: true,
+          contextIsolation: false,
+          sandbox: false
+        }
+      });
+
+      w.webContents.session.setPermissionCheckHandler((wc, permission, origin, details) => {
+        expect(permission).to.equal('fileSystem');
+
+        const { fileAccessType, isDirectory, filePath } = details;
+        expect(fileAccessType).to.equal('readable');
+        expect(isDirectory).to.be.true();
+        expect(filePath).to.equal(testDir);
+        return false;
+      });
+
+      ipcMain.once('did-create-directory-handle', async () => {
+        const permission = await w.webContents.executeJavaScript(`
+          new Promise(async (resolve, reject) => {
+            try {
+              const permission = await handle.queryPermission({ mode: 'read' });
+              resolve(permission);
+            } catch {
+              resolve('denied');
+            }
+          })
+        `, true);
+        expect(permission).to.equal('denied');
+        done();
+      });
+
+      w.loadFile(permPath);
+
+      w.webContents.once('did-finish-load', () => {
+        // @ts-expect-error Undocumented testing method.
+        clipboard._writeFilesForTesting([testDir]);
+        w.webContents.paste();
+      });
+    });
+
+    it('correctly allows permissions after creating a readable directory handle', (done) => {
+      const permPath = path.join(fixturesPath, 'file-system', 'test-perms.html');
+      const testDir = path.join(fixturesPath, 'file-system');
+
+      const w = new BrowserWindow({
+        webPreferences: {
+          nodeIntegration: true,
+          contextIsolation: false,
+          sandbox: false
+        }
+      });
+
+      w.webContents.session.setPermissionCheckHandler((wc, permission, origin, details) => {
+        if (permission === 'fileSystem') {
+          const { fileAccessType, isDirectory, filePath } = details;
+          expect(fileAccessType).to.equal('readable');
+          expect(isDirectory).to.be.true();
+          expect(filePath).to.equal(testDir);
+          return true;
+        }
+        return false;
+      });
+
+      ipcMain.once('did-create-directory-handle', async () => {
+        const permission = await w.webContents.executeJavaScript(`
+          new Promise(async (resolve, reject) => {
+            try {
+              const permission = await handle.queryPermission({ mode: 'read' });
+              resolve(permission);
+            } catch {
+              resolve('denied');
+            }
+          })
+        `, true);
+        expect(permission).to.equal('granted');
+        done();
+      });
+
+      w.loadFile(permPath);
+
+      w.webContents.once('did-finish-load', () => {
+        // @ts-expect-error Undocumented testing method.
+        clipboard._writeFilesForTesting([testDir]);
+        w.webContents.paste();
+      });
+    });
+
+    it('allows in-session persistence of granted file permissions', (done) => {
+      const writablePath = path.join(fixturesPath, 'file-system', 'test-perms.html');
+      const testFile = path.join(fixturesPath, 'file-system', 'persist.txt');
+
+      const w = new BrowserWindow({
+        webPreferences: {
+          nodeIntegration: true,
+          contextIsolation: false,
+          sandbox: false
+        }
+      });
+
+      w.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+        callback(true);
+      });
+
+      w.webContents.session.setPermissionCheckHandler((_wc, permission, _origin, details) => {
+        if (permission === 'fileSystem') {
+          const { fileAccessType, isDirectory, filePath } = details;
+          expect(fileAccessType).to.deep.equal('readable');
+          expect(isDirectory).to.be.false();
+          expect(filePath).to.equal(testFile);
+          return true;
+        }
+        return false;
+      });
+
+      let reload = true;
+      ipcMain.on('did-create-file-handle', async () => {
+        if (reload) {
+          w.webContents.reload();
+          reload = false;
+        } else {
+          const permission = await w.webContents.executeJavaScript(`
+            new Promise(async (resolve, reject) => {
+              try {
+                const permission = await handle.queryPermission({ mode: 'read' });
+                resolve(permission);
+              } catch {
+                resolve('denied');
+              }
+            })
+          `, true);
+          expect(permission).to.equal('granted');
+          done();
+        }
+      });
+
+      w.loadFile(writablePath);
+
+      w.webContents.on('did-finish-load', () => {
         // @ts-expect-error Undocumented testing method.
         clipboard._writeFilesForTesting([testFile]);
         w.webContents.paste();
@@ -1265,6 +1593,16 @@ describe('chromium features', () => {
         expect(newWindow.isVisible()).to.equal(true);
       });
     }
+
+    it('is always resizable', async () => {
+      const w = new BrowserWindow({ show: false });
+      w.loadFile(path.resolve(__dirname, 'fixtures', 'blank.html'));
+      w.webContents.executeJavaScript(`
+        { b = window.open('about:blank', '', 'resizable=no,show=no'); null }
+      `);
+      const [, popup] = await once(app, 'browser-window-created') as [any, BrowserWindow];
+      expect(popup.isResizable()).to.be.true();
+    });
 
     // FIXME(zcbenz): This test is making the spec runner hang on exit on Windows.
     ifit(process.platform !== 'win32')('disables node integration when it is disabled on the parent window', async () => {
@@ -1637,10 +1975,10 @@ describe('chromium features', () => {
       });
 
       it('delivers messages that match the origin', async () => {
-        const w = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: true, contextIsolation: false } });
+        const w = new BrowserWindow({ show: false });
         w.loadFile(path.resolve(__dirname, 'fixtures', 'blank.html'));
         const data = await w.webContents.executeJavaScript(`
-          window.open(${JSON.stringify(serverURL)}, '', 'show=no,contextIsolation=no,nodeIntegration=yes');
+          window.open(${JSON.stringify(serverURL)}, '', 'show=no');
           new Promise(resolve => window.addEventListener('message', resolve, {once: true})).then(e => e.data)
         `);
         expect(data).to.equal('deliver');
@@ -2959,7 +3297,7 @@ describe('font fallback', () => {
     } else if (process.platform === 'darwin') {
       expect(fonts[0].familyName).to.equal('Helvetica');
     } else if (process.platform === 'linux') {
-      expect(fonts[0].familyName).to.equal('DejaVu Sans (Fontations)');
+      expect(fonts[0].familyName).to.equal('DejaVu Sans');
     } // I think this depends on the distro? We don't specify a default.
   });
 
@@ -3113,6 +3451,7 @@ describe('navigator.serial', () => {
   });
 
   it('does not return a port if select-serial-port event is not defined', async () => {
+    // Take screenshot to verify the test is running
     w.loadFile(path.join(fixturesPath, 'pages', 'blank.html'));
     const port = await getPorts();
     expect(port).to.equal(notFoundError);
@@ -3271,7 +3610,12 @@ describe('navigator.clipboard.read', () => {
     await w.loadFile(path.join(fixturesPath, 'pages', 'blank.html'));
   });
 
-  const readClipboard: any = () => {
+  const readClipboard = async () => {
+    if (!w.webContents.isFocused()) {
+      const focus = once(w.webContents, 'focus');
+      w.webContents.focus();
+      await focus;
+    }
     return w.webContents.executeJavaScript(`
       navigator.clipboard.read().then(clipboard => clipboard.toString()).catch(err => err.message);
     `, true);
@@ -3289,11 +3633,7 @@ describe('navigator.clipboard.read', () => {
 
   it('returns an error when permission denied', async () => {
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
-      if (permission === 'clipboard-read') {
-        callback(false);
-      } else {
-        callback(true);
-      }
+      callback(permission !== 'clipboard-read');
     });
     const clipboard = await readClipboard();
     expect(clipboard).to.contain('Read permission denied.');
@@ -3301,11 +3641,7 @@ describe('navigator.clipboard.read', () => {
 
   it('returns clipboard contents when permission is granted', async () => {
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
-      if (permission === 'clipboard-read') {
-        callback(true);
-      } else {
-        callback(false);
-      }
+      callback(permission === 'clipboard-read');
     });
     const clipboard = await readClipboard();
     expect(clipboard).to.not.contain('Read permission denied.');
@@ -3319,7 +3655,12 @@ describe('navigator.clipboard.write', () => {
     await w.loadFile(path.join(fixturesPath, 'pages', 'blank.html'));
   });
 
-  const writeClipboard: any = () => {
+  const writeClipboard = async () => {
+    if (!w.webContents.isFocused()) {
+      const focus = once(w.webContents, 'focus');
+      w.webContents.focus();
+      await focus;
+    }
     return w.webContents.executeJavaScript(`
       navigator.clipboard.writeText('Hello World!').catch(err => err.message);
     `, true);
@@ -3361,7 +3702,13 @@ describe('navigator.clipboard.write', () => {
 });
 
 describe('paste execCommand', () => {
-  const readClipboard: any = (w: BrowserWindow) => {
+  const readClipboard = async (w: BrowserWindow) => {
+    if (!w.webContents.isFocused()) {
+      const focus = once(w.webContents, 'focus');
+      w.webContents.focus();
+      await focus;
+    }
+
     return w.webContents.executeJavaScript(`
       new Promise((resolve) => {
         const timeout = setTimeout(() => {
@@ -3637,8 +3984,14 @@ describe('navigator.bluetooth', () => {
 
   it('can request bluetooth devices', async () => {
     const bluetooth = await w.webContents.executeJavaScript(`
-    navigator.bluetooth.requestDevice({ acceptAllDevices: true}).then(device => "Found a device!").catch(err => err.message);`, true);
-    expect(bluetooth).to.be.oneOf(['Found a device!', 'Bluetooth adapter not available.', 'User cancelled the requestDevice() chooser.']);
+    navigator.bluetooth.requestDevice({ acceptAllDevices: true }).then(device => "Found a device!").catch(err => err.message);`, true);
+    const requestResponses = [
+      'Found a device!',
+      'Bluetooth adapter not available.',
+      'User cancelled the requestDevice() chooser.',
+      'User denied the browser permission to scan for Bluetooth devices.'
+    ];
+    expect(bluetooth).to.be.oneOf(requestResponses, `Unexpected response: ${bluetooth}`);
   });
 });
 
@@ -3668,6 +4021,7 @@ describe('navigator.hid', () => {
     server.close();
     closeAllWindows();
   });
+
   afterEach(() => {
     session.defaultSession.setPermissionCheckHandler(null);
     session.defaultSession.setDevicePermissionHandler(null);

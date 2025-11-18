@@ -28,7 +28,7 @@ class TrackableObjectBase : public CleanedUpAtExit {
   TrackableObjectBase& operator=(const TrackableObjectBase&) = delete;
 
   // The ID in weak map.
-  int32_t weak_map_id() const { return weak_map_id_; }
+  [[nodiscard]] constexpr int32_t weak_map_id() const { return weak_map_id_; }
 
   // Wrap TrackableObject into a class that SupportsUserData.
   void AttachAsUserData(base::SupportsUserData* wrapped);
@@ -61,7 +61,8 @@ class TrackableObject : public TrackableObjectBase, public EventEmitter<T> {
     v8::HandleScope scope(gin_helper::Wrappable<T>::isolate());
     v8::Local<v8::Object> wrapper = gin_helper::Wrappable<T>::GetWrapper();
     if (!wrapper.IsEmpty()) {
-      wrapper->SetAlignedPointerInInternalField(0, nullptr);
+      wrapper->SetAlignedPointerInInternalField(
+          0, nullptr, v8::kEmbedderDataTypeTagDefault);
       gin_helper::WrappableBase::wrapper_.ClearWeak();
     }
   }
@@ -70,7 +71,8 @@ class TrackableObject : public TrackableObjectBase, public EventEmitter<T> {
     v8::HandleScope scope(gin_helper::Wrappable<T>::isolate());
     v8::Local<v8::Object> wrapper = gin_helper::Wrappable<T>::GetWrapper();
     return wrapper->InternalFieldCount() == 0 ||
-           wrapper->GetAlignedPointerFromInternalField(0) == nullptr;
+           wrapper->GetAlignedPointerFromInternalField(
+               0, v8::kEmbedderDataTypeTagDefault) == nullptr;
   }
 
   // Finds out the TrackableObject from its ID in weak map.

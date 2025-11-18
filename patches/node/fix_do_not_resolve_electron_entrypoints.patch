@@ -5,35 +5,23 @@ Subject: fix: do not resolve electron entrypoints
 
 This wastes fs cycles and can result in strange behavior if this path actually exists on disk
 
-diff --git a/lib/internal/modules/esm/load.js b/lib/internal/modules/esm/load.js
-index c9d4a3536d0f60375ae623b48ca2fa7095c88d42..d818320fbbc430d06a0c2852e4723981d6e1a844 100644
---- a/lib/internal/modules/esm/load.js
-+++ b/lib/internal/modules/esm/load.js
-@@ -109,7 +109,7 @@ async function defaultLoad(url, context = kEmptyObject) {
-     source = null;
-     format ??= 'builtin';
-   } else if (format !== 'commonjs' || defaultType === 'module') {
--    if (source == null) {
-+    if (format !== 'electron' && source == null) {
-       ({ responseURL, source } = await getSource(urlInstance, context));
-       context = { __proto__: context, source };
-     }
 diff --git a/lib/internal/modules/esm/translators.js b/lib/internal/modules/esm/translators.js
-index 49aacb6262502ced54e817f99dd596db85b9659c..f9f065bb743275e9b2ce71375e6a9f06e00c0f36 100644
+index 1f967df42128a05e49acfa6d409737c06a3372e3..c9b0dae3378f556c453f4fa31208eb6f57c433a9 100644
 --- a/lib/internal/modules/esm/translators.js
 +++ b/lib/internal/modules/esm/translators.js
-@@ -291,6 +291,9 @@ function cjsPreparseModuleExports(filename, source, isMain, format) {
-   if (module && module[kModuleExportNames] !== undefined) {
+@@ -408,6 +408,10 @@ function cjsPreparseModuleExports(filename, source, format) {
      return { module, exportNames: module[kModuleExportNames] };
    }
+ 
 +  if (filename === 'electron') {
 +    return { module, exportNames: new SafeSet(['default', ...Object.keys(module.exports)]) };
 +  }
-   const loaded = Boolean(module);
-   if (!loaded) {
-     module = new CJSModule(filename);
++
+   if (source === undefined) {
+     ({ source } = loadSourceForCJSWithHooks(module, filename, format));
+   }
 diff --git a/lib/internal/modules/run_main.js b/lib/internal/modules/run_main.js
-index ab4783a7982b9feb8fa85b62e3e3b181f93309bd..34f91026451d7347ae278712d083e4fe281e50f3 100644
+index 2a9ef56d1568080d19d4b6e68a14c752e48c3822..fb45f3dc66a49a554df1c06431197392c0a199b7 100644
 --- a/lib/internal/modules/run_main.js
 +++ b/lib/internal/modules/run_main.js
 @@ -2,6 +2,7 @@
@@ -44,8 +32,8 @@ index ab4783a7982b9feb8fa85b62e3e3b181f93309bd..34f91026451d7347ae278712d083e4fe
    globalThis,
  } = primordials;
  
-@@ -26,6 +27,13 @@ const {
-  * @param {string} main - Entry point path
+@@ -27,6 +28,13 @@ const {
+  * @returns {string|undefined}
   */
  function resolveMainPath(main) {
 +  // For built-in modules used as the main entry point we _never_
@@ -55,11 +43,11 @@ index ab4783a7982b9feb8fa85b62e3e3b181f93309bd..34f91026451d7347ae278712d083e4fe
 +    return main;
 +  }
 +
-   const defaultType = getOptionValue('--experimental-default-type');
    /** @type {string} */
    let mainPath;
-@@ -62,6 +70,13 @@ function resolveMainPath(main) {
-  * @param {string} mainPath - Absolute path to the main entry point
+   // Extension searching for the main entry point is supported for backward compatibility.
+@@ -50,6 +58,13 @@ function resolveMainPath(main) {
+  * @returns {boolean}
   */
  function shouldUseESMLoader(mainPath) {
 +  // For built-in modules used as the main entry point we _never_
@@ -69,6 +57,6 @@ index ab4783a7982b9feb8fa85b62e3e3b181f93309bd..34f91026451d7347ae278712d083e4fe
 +    return false;
 +  }
 +
-   if (getOptionValue('--experimental-default-type') === 'module') { return true; }
- 
    /**
+    * @type {string[]} userLoaders A list of custom loaders registered by the user
+    * (or an empty list when none have been registered).

@@ -288,8 +288,13 @@ function parseOptions (optionsIn: ClientRequestConstructorOptions | string): Nod
     origin: options.origin,
     referrerPolicy: options.referrerPolicy,
     cache: options.cache,
-    allowNonHttpProtocols: Object.hasOwn(options, kAllowNonHttpProtocols)
+    allowNonHttpProtocols: Object.hasOwn(options, kAllowNonHttpProtocols),
+    priority: options.priority,
+    bypassCustomProtocolHandlers: options.bypassCustomProtocolHandlers
   };
+  if ('priorityIncremental' in options) {
+    urlLoaderOptions.priorityIncremental = options.priorityIncremental;
+  }
   const headers: Record<string, string | string[]> = options.headers || {};
   for (const [name, value] of Object.entries(headers)) {
     validateHeader(name, value);
@@ -423,9 +428,8 @@ export class ClientRequest extends Writable implements Electron.ClientRequest {
     this._started = true;
     const stringifyValues = (obj: Record<string, { name: string, value: string | string[] }>) => {
       const ret: Record<string, string> = {};
-      for (const k of Object.keys(obj)) {
-        const kv = obj[k];
-        ret[kv.name] = kv.value.toString();
+      for (const { name, value } of Object.values(obj)) {
+        ret[name] = value.toString();
       }
       return ret;
     };

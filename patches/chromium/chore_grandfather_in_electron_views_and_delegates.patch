@@ -10,10 +10,10 @@ Subject: chore: "grandfather in" Electron Views and Delegates
 6448510: Lock further access to View::set_owned_by_client(). | https://chromium-review.googlesource.com/c/chromium/src/+/6448510
 
 diff --git a/ui/views/view.h b/ui/views/view.h
-index ae7eab37f12ba80ec423d229cf048021e9ba6765..507a75dc7947295db221b01356fa57baf3cf03e4 100644
+index 5d89a7ce81b2df250c02601a45eaec93e3cc171d..709ae884a2d62c6c4df286ae897ef6a4148c1ddd 100644
 --- a/ui/views/view.h
 +++ b/ui/views/view.h
-@@ -82,6 +82,19 @@ class ArcNotificationContentView;
+@@ -78,6 +78,19 @@ class ArcNotificationContentView;
  class WideFrameView;
  }  // namespace ash
  
@@ -33,7 +33,7 @@ index ae7eab37f12ba80ec423d229cf048021e9ba6765..507a75dc7947295db221b01356fa57ba
  namespace exo {
  class ShellSurfaceBase;
  }
-@@ -324,6 +337,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
+@@ -325,6 +338,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   public:
    class OwnedByClientPassKey {
     private:
@@ -49,10 +49,10 @@ index ae7eab37f12ba80ec423d229cf048021e9ba6765..507a75dc7947295db221b01356fa57ba
      // These existing cases are "grandfathered in", but there shouldn't be more.
      // See comments atop class.
 diff --git a/ui/views/widget/widget_delegate.h b/ui/views/widget/widget_delegate.h
-index 89de188e6a0139a236a824b189f1048613d6f457..c438376c34cac4ec7ac7a03d852685c18b10068e 100644
+index 7695f926b19cc81dfce9995a4ebac9dd50782ec0..c73616912049615c269be47ef733a6b15546c8c6 100644
 --- a/ui/views/widget/widget_delegate.h
 +++ b/ui/views/widget/widget_delegate.h
-@@ -165,6 +165,12 @@ namespace crostini {
+@@ -168,6 +168,12 @@ namespace crostini {
  class AppRestartDialog;
  }
  
@@ -62,10 +62,10 @@ index 89de188e6a0139a236a824b189f1048613d6f457..c438376c34cac4ec7ac7a03d852685c1
 +class NativeWindowMac;
 +}
 +
- namespace enterprise_connectors {
- class ContentAnalysisDialog;
- class ContentAnalysisDialogBehaviorBrowserTest;
-@@ -367,6 +373,7 @@ class VIEWS_EXPORT WidgetDelegate {
+ namespace exo {
+ class ShellSurfaceBase;
+ }
+@@ -372,6 +378,7 @@ class VIEWS_EXPORT WidgetDelegate {
  
    class OwnedByWidgetPassKey {
     private:
@@ -73,7 +73,7 @@ index 89de188e6a0139a236a824b189f1048613d6f457..c438376c34cac4ec7ac7a03d852685c1
      // DO NOT ADD TO THIS LIST!
      // These existing cases are "grandfathered in", but there shouldn't be more.
      // See comments atop `SetOwnedByWidget()`.
-@@ -463,6 +470,7 @@ class VIEWS_EXPORT WidgetDelegate {
+@@ -465,6 +472,7 @@ class VIEWS_EXPORT WidgetDelegate {
    };
    class RegisterDeleteCallbackPassKey {
     private:
@@ -81,7 +81,7 @@ index 89de188e6a0139a236a824b189f1048613d6f457..c438376c34cac4ec7ac7a03d852685c1
      // DO NOT ADD TO THIS LIST!
      // These existing cases are "grandfathered in", but there shouldn't be more.
      // See comments atop `RegisterDeleteDelegateCallback()`.
-@@ -913,6 +921,7 @@ class VIEWS_EXPORT WidgetDelegateView : public WidgetDelegate, public View {
+@@ -921,6 +929,7 @@ class VIEWS_EXPORT WidgetDelegateView : public WidgetDelegate, public View {
    View* GetContentsView() override;
  
   private:

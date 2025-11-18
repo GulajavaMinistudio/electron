@@ -66,7 +66,7 @@ The `session` module has the following properties:
 
 ### `session.defaultSession`
 
-A `Session` object, the default session object of the app.
+A `Session` object, the default session object of the app, available after `app.whenReady` is called.
 
 ## Class: Session
 
@@ -79,6 +79,7 @@ You can create a `Session` object in the `session` module:
 
 ```js
 const { session } = require('electron')
+
 const ses = session.fromPartition('persist:name')
 console.log(ses.getUserAgent())
 ```
@@ -100,8 +101,9 @@ Emitted when Electron is about to download `item` in `webContents`.
 Calling `event.preventDefault()` will cancel the download and `item` will not be
 available from next tick of the process.
 
-```js @ts-expect-error=[4]
+```js @ts-expect-error=[5]
 const { session } = require('electron')
+
 session.defaultSession.on('will-download', (event, item, webContents) => {
   event.preventDefault()
   require('got')(item.getURL()).then((response) => {
@@ -852,6 +854,7 @@ verify proc.
 
 ```js
 const { BrowserWindow } = require('electron')
+
 const win = new BrowserWindow()
 
 win.webContents.session.setCertificateVerifyProc((request, callback) => {
@@ -903,6 +906,7 @@ Most web APIs do a permission check and then make a permission request if the ch
 
 ```js
 const { session } = require('electron')
+
 session.fromPartition('some-partition').setPermissionRequestHandler((webContents, permission, callback) => {
   if (webContents.getURL() === 'some-host' && permission === 'notifications') {
     return callback(false) // denied.
@@ -935,14 +939,18 @@ session.fromPartition('some-partition').setPermissionRequestHandler((webContents
     * `top-level-storage-access` -  Allow top-level sites to request third-party cookie access on behalf of embedded content originating from another site in the same related website set using the [Storage Access API](https://developer.mozilla.org/en-US/docs/Web/API/Storage_Access_API).
     * `usb` - Expose non-standard Universal Serial Bus (USB) compatible devices services to the web with the [WebUSB API](https://developer.mozilla.org/en-US/docs/Web/API/WebUSB_API).
     * `deprecated-sync-clipboard-read` _Deprecated_ - Request access to run `document.execCommand("paste")`
+    * `fileSystem` - Access to read, write, and file management capabilities using the [File System API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API).
   * `requestingOrigin` string - The origin URL of the permission check
   * `details` Object - Some properties are only available on certain permission types.
     * `embeddingOrigin` string (optional) - The origin of the frame embedding the frame that made the permission check.  Only set for cross-origin sub frames making permission checks.
     * `securityOrigin` string (optional) - The security origin of the `media` check.
     * `mediaType` string (optional) - The type of media access being requested, can be `video`,
-      `audio` or `unknown`
+      `audio` or `unknown`.
     * `requestingUrl` string (optional) - The last URL the requesting frame loaded.  This is not provided for cross-origin sub frames making permission checks.
-    * `isMainFrame` boolean - Whether the frame making the request is the main frame
+    * `isMainFrame` boolean - Whether the frame making the request is the main frame.
+    * `filePath` string (optional) - The path of a `fileSystem` request.
+    * `isDirectory` boolean (optional) - Whether a `fileSystem` request is a directory.
+    * `fileAccessType` string (optional) - The access type of a `fileSystem` request. Can be `writable` or `readable`.
 
 Sets the handler which can be used to respond to permission checks for the `session`.
 Returning `true` will allow the permission and `false` will reject it.  Please note that
@@ -952,7 +960,9 @@ To clear the handler, call `setPermissionCheckHandler(null)`.
 
 ```js
 const { session } = require('electron')
-const url = require('url')
+
+const url = require('node:url')
+
 session.fromPartition('some-partition').setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
   if (new URL(requestingOrigin).hostname === 'some-host' && permission === 'notifications') {
     return true // granted
@@ -961,6 +971,9 @@ session.fromPartition('some-partition').setPermissionCheckHandler((webContents, 
   return false // denied
 })
 ```
+
+> [!NOTE]
+> `isMainFrame` will always be `false` for a `fileSystem` request as a result of Chromium limitations.
 
 #### `ses.setDisplayMediaRequestHandler(handler[, opts])`
 
@@ -1189,6 +1202,7 @@ automatically.  To clear the handler, call `setBluetoothPairingHandler(null)`.
 
 ```js
 const { app, BrowserWindow, session } = require('electron')
+
 const path = require('node:path')
 
 function createWindow () {
@@ -1518,6 +1532,7 @@ extension to be loaded.
 
 ```js
 const { app, session } = require('electron')
+
 const path = require('node:path')
 
 app.whenReady().then(async () => {
@@ -1659,6 +1674,7 @@ A [`Protocol`](protocol.md) object for this session.
 
 ```js
 const { app, session } = require('electron')
+
 const path = require('node:path')
 
 app.whenReady().then(() => {

@@ -9,6 +9,7 @@ module is emitted.
 
 ```js
 const { BaseWindow, View } = require('electron')
+
 const win = new BaseWindow()
 const view = new View()
 
@@ -24,6 +25,10 @@ win.contentView.addChildView(view)
 Process: [Main](../glossary.md#main-process)
 
 `View` is an [EventEmitter][event-emitter].
+
+> [!WARNING]
+> Electron's built-in classes cannot be subclassed in user code.
+> For more information, see [the FAQ](../faq.md#class-inheritance-does-not-work-with-electron-built-in-modules).
 
 ### `new View()`
 

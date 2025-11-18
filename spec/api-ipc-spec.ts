@@ -218,7 +218,7 @@ describe('ipc module', () => {
       expect(msg).to.equal('hi');
       expect(ev.ports).to.have.length(1);
       expect(ev.senderFrame.parent).to.be.null();
-      expect(ev.senderFrame.routingId).to.equal(w.webContents.mainFrame.routingId);
+      expect(ev.senderFrame.frameToken).to.equal(w.webContents.mainFrame.frameToken);
       const [port] = ev.ports;
       expect(port).to.be.an.instanceOf(EventEmitter);
     });
@@ -233,7 +233,7 @@ describe('ipc module', () => {
       const [ev, msg] = await p;
       expect(msg).to.equal('hi');
       expect(ev.ports).to.deep.equal([]);
-      expect(ev.senderFrame.routingId).to.equal(w.webContents.mainFrame.routingId);
+      expect(ev.senderFrame.frameToken).to.equal(w.webContents.mainFrame.frameToken);
     });
 
     it('throws when the transferable is invalid', async () => {
@@ -243,7 +243,6 @@ describe('ipc module', () => {
       await w.webContents.executeJavaScript(`(${function () {
         try {
           const buffer = new ArrayBuffer(10);
-          // @ts-expect-error
           require('electron').ipcRenderer.postMessage('port', '', [buffer]);
         } catch (e) {
           require('electron').ipcRenderer.postMessage('port', { error: (e as Error).message });
@@ -266,7 +265,7 @@ describe('ipc module', () => {
       }})()`);
       const [ev] = await p;
       expect(ev.ports).to.have.length(1);
-      expect(ev.senderFrame.routingId).to.equal(w.webContents.mainFrame.routingId);
+      expect(ev.senderFrame.frameToken).to.equal(w.webContents.mainFrame.frameToken);
       const [port] = ev.ports;
       port.start();
       port.postMessage(42);
@@ -323,7 +322,7 @@ describe('ipc module', () => {
           w.loadURL('about:blank');
           await w.webContents.executeJavaScript(`(${function () {
             const { ipcRenderer } = require('electron');
-            ipcRenderer.on('port', e => {
+            ipcRenderer.on('port', (e: any) => {
               const [port] = e.ports;
               port.start();
               port.onclose = () => {
@@ -480,8 +479,8 @@ describe('ipc module', () => {
         w.loadURL('about:blank');
         await w.webContents.executeJavaScript(`(${function () {
           const { ipcRenderer } = require('electron');
-          ipcRenderer.on('port', ev => {
-            const [port] = ev.ports;
+          ipcRenderer.on('port', (e: any) => {
+            const [port] = e.ports;
             port.onmessage = () => {
               ipcRenderer.send('done');
             };
@@ -498,9 +497,9 @@ describe('ipc module', () => {
         w.loadURL('about:blank');
         await w.webContents.executeJavaScript(`(${function () {
           const { ipcRenderer } = require('electron');
-          ipcRenderer.on('port', e1 => {
-            e1.ports[0].onmessage = e2 => {
-              e2.ports[0].onmessage = e3 => {
+          ipcRenderer.on('port', (e1: any) => {
+            e1.ports[0].onmessage = (e2: any) => {
+              e2.ports[0].onmessage = (e3: any) => {
                 ipcRenderer.send('done', e3.data);
               };
             };
@@ -587,7 +586,7 @@ describe('ipc module', () => {
           w.loadURL('about:blank');
           await w.webContents.executeJavaScript(`(${function () {
             const { ipcRenderer } = require('electron');
-            ipcRenderer.on('foo', (_e, msg) => {
+            ipcRenderer.on('foo', (_e: Event, msg: string) => {
               ipcRenderer.send('bar', msg);
             });
           }})()`);

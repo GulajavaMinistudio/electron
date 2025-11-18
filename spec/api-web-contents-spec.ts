@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain, webContents, session, app, BrowserView, WebContents, BaseWindow, WebContentsView } from 'electron/main';
 
-import { expect } from 'chai';
+import { assert, expect } from 'chai';
 
 import * as cp from 'node:child_process';
 import { once } from 'node:events';
@@ -402,6 +402,15 @@ describe('webContents module', () => {
     let w: BrowserWindow;
     let s: http.Server;
 
+    before(function () {
+      session.fromPartition('loadurl-webcontents-spec').setPermissionRequestHandler((webContents, permission, callback) => {
+        if (permission === 'openExternal') {
+          return callback(false);
+        }
+        callback(true);
+      });
+    });
+
     afterEach(() => {
       if (s) {
         s.close();
@@ -410,9 +419,18 @@ describe('webContents module', () => {
     });
 
     beforeEach(async () => {
-      w = new BrowserWindow({ show: false });
+      w = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          partition: 'loadurl-webcontents-spec'
+        }
+      });
     });
     afterEach(closeAllWindows);
+
+    after(async () => {
+      session.fromPartition('loadurl-webcontents-spec').setPermissionRequestHandler(null);
+    });
 
     it('resolves when done loading', async () => {
       await expect(w.loadURL('about:blank')).to.eventually.be.fulfilled();
@@ -484,7 +502,7 @@ describe('webContents module', () => {
       }
     });
 
-    it('fails if loadURL is called inside a non-reentrant critical section', (done) => {
+    it('fails if loadURL is called inside did-start-loading', (done) => {
       w.webContents.once('did-fail-load', (_event, _errorCode, _errorDescription, validatedURL) => {
         expect(validatedURL).to.contain('blank.html');
         done();
@@ -495,6 +513,49 @@ describe('webContents module', () => {
       });
 
       w.loadURL('data:text/html,<h1>HELLO</h1>');
+    });
+
+    it('fails if loadurl is called after the navigation is ready to commit', () => {
+      w.webContents.once('did-fail-load', (_event, _errorCode, _errorDescription, validatedURL) => {
+        expect(validatedURL).to.contain('blank.html');
+      });
+
+      // @ts-expect-error internal-only event.
+      w.webContents.once('-ready-to-commit-navigation', () => {
+        w.loadURL(`file://${fixturesPath}/pages/blank.html`);
+      });
+
+      w.loadURL('data:text/html,<h1>HELLO</h1>');
+    });
+
+    it('fails if loadURL is called inside did-redirect-navigation', (done) => {
+      const server = http.createServer((req, res) => {
+        if (req.url === '/302') {
+          res.statusCode = 302;
+          res.setHeader('Location', '/200');
+          res.end();
+        } else if (req.url === '/200') {
+          res.end('ok');
+        } else {
+          res.end();
+        }
+      });
+
+      w.webContents.once('did-fail-load', (_event, _errorCode, _errorDescription, validatedURL) => {
+        expect(validatedURL).to.contain('blank.html');
+        server.close();
+        done();
+      });
+
+      listen(server).then(({ url }) => {
+        w.webContents.once('did-redirect-navigation', () => {
+          w.loadURL(`file://${fixturesPath}/pages/blank.html`);
+        });
+        w.loadURL(`${url}/302`);
+      }).catch(e => {
+        server.close();
+        done(e);
+      });
     });
 
     it('sets appropriate error information on rejection', async () => {
@@ -858,7 +919,7 @@ describe('webContents module', () => {
           return w.webContents.navigationHistory.restore({ index: 2, entries });
         });
 
-        expect(formValue).to.equal('Hi!');
+        await waitUntil(() => formValue === 'Hi!');
       });
 
       it('should handle invalid base64 pageState', async () => {
@@ -951,6 +1012,41 @@ describe('webContents module', () => {
       w.webContents.closeDevTools();
       await devToolsClosed;
       expect(() => { webContents.getFocusedWebContents(); }).to.not.throw();
+    });
+
+    it('Inspect activates detached devtools window', async () => {
+      const window = new BrowserWindow({ show: true });
+      await window.loadURL('about:blank');
+      const webContentsBeforeOpenedDevtools = webContents.getAllWebContents();
+
+      const windowWasBlurred = once(window, 'blur');
+      window.webContents.openDevTools({ mode: 'detach' });
+      await windowWasBlurred;
+
+      let devToolsWebContents = null;
+      for (const newWebContents of webContents.getAllWebContents()) {
+        const oldWebContents = webContentsBeforeOpenedDevtools.find(
+          oldWebContents => {
+            return newWebContents.id === oldWebContents.id;
+          });
+        if (oldWebContents !== null) {
+          devToolsWebContents = newWebContents;
+          break;
+        }
+      }
+      assert(devToolsWebContents !== null);
+
+      const windowFocused = once(window, 'focus');
+      window.focus();
+      await windowFocused;
+
+      expect(devToolsWebContents.isFocused()).to.be.false();
+      const devToolsWebContentsFocused = once(devToolsWebContents, 'focus');
+      window.webContents.inspectElement(100, 100);
+      await devToolsWebContentsFocused;
+
+      expect(devToolsWebContents.isFocused()).to.be.true();
+      expect(window.isFocused()).to.be.false();
     });
   });
 
@@ -1068,6 +1164,76 @@ describe('webContents module', () => {
       expect(w.webContents.isDevToolsOpened()).to.be.true();
       w.webContents.setDevToolsTitle('newTitle');
       expect(w.webContents.getDevToolsTitle()).to.equal('newTitle');
+    });
+  });
+
+  describe('before-mouse-event event', () => {
+    afterEach(closeAllWindows);
+    it('can prevent document mouse events', async () => {
+      const w = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: true, contextIsolation: false } });
+      await w.loadFile(path.join(fixturesPath, 'pages', 'mouse-events.html'));
+      const mouseDown = new Promise(resolve => {
+        ipcMain.once('mousedown', (event, button) => resolve(button));
+      });
+      w.webContents.once('before-mouse-event', (event, input) => {
+        if (input.button === 'left') event.preventDefault();
+      });
+      w.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', x: 100, y: 100 });
+      w.webContents.sendInputEvent({ type: 'mouseDown', button: 'right', x: 100, y: 100 });
+      expect(await mouseDown).to.equal(2); // Right button is 2
+    });
+
+    it('has the correct properties', async () => {
+      const w = new BrowserWindow({ show: false });
+      await w.loadFile(path.join(fixturesPath, 'pages', 'base-page.html'));
+      const testBeforeMouse = async (opts: Electron.MouseInputEvent) => {
+        const p = once(w.webContents, 'before-mouse-event');
+        w.webContents.sendInputEvent({
+          type: opts.type,
+          button: opts.button,
+          x: opts.x,
+          y: opts.y,
+          globalX: opts.globalX,
+          globalY: opts.globalY,
+          clickCount: opts.clickCount
+        });
+        const [, input] = await p;
+
+        expect(input.type).to.equal(opts.type);
+        expect(input.button).to.equal(opts.button);
+        expect(input.x).to.equal(opts.x);
+        expect(input.y).to.equal(opts.y);
+        expect(input.globalX).to.equal(opts.globalX);
+        expect(input.globalY).to.equal(opts.globalY);
+        expect(input.clickCount).to.equal(opts.clickCount);
+      };
+      await testBeforeMouse({
+        type: 'mouseDown',
+        button: 'left',
+        x: 100,
+        y: 100,
+        globalX: 200,
+        globalY: 200,
+        clickCount: 1
+      });
+      await testBeforeMouse({
+        type: 'mouseUp',
+        button: 'right',
+        x: 150,
+        y: 150,
+        globalX: 250,
+        globalY: 250,
+        clickCount: 2
+      });
+      await testBeforeMouse({
+        type: 'mouseMove',
+        button: 'middle',
+        x: 200,
+        y: 200,
+        globalX: 300,
+        globalY: 300,
+        clickCount: 0
+      });
     });
   });
 
@@ -2491,7 +2657,13 @@ describe('webContents module', () => {
         const errMsg = Buffer.concat(stderr).toString().trim();
         console.error(`Error parsing PDF file, exit code was ${code}; signal was ${signal}, error: ${errMsg}`);
       }
-      return JSON.parse(Buffer.concat(stdout).toString().trim());
+      try {
+        return JSON.parse(Buffer.concat(stdout).toString().trim());
+      } catch (err) {
+        console.error('Error parsing PDF file:', err);
+        console.error('Raw output:', Buffer.concat(stdout).toString().trim());
+        throw err;
+      }
     };
 
     let w: BrowserWindow;

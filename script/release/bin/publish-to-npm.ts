@@ -137,6 +137,20 @@ new Promise<string>((resolve, reject) => {
     return release;
   })
   .then(async (release) => {
+    const gnArgs = await fs.promises.readFile(path.resolve(ELECTRON_DIR, 'build/args/all.gn'), 'utf8');
+
+    const abiVersionLine = gnArgs.split('\n').find((line) => line.startsWith('node_module_version = '));
+    const abiVersion = abiVersionLine ? abiVersionLine.split('=')[1].trim() : null;
+    if (!abiVersion) {
+      throw new Error('Could not find node_module_version in GN args');
+    }
+
+    const abiVersionFile = path.join(tempDir, 'abi_version');
+    await fs.promises.writeFile(abiVersionFile, abiVersion);
+
+    return release;
+  })
+  .then(async (release) => {
     const currentBranch = await getCurrentBranch();
 
     if (isNightlyElectronVersion) {
@@ -197,6 +211,7 @@ new Promise<string>((resolve, reject) => {
     });
   })
   .then((tarballPath) => {
+    // TODO: Remove NPX
     const existingVersionJSON = childProcess.execSync(`npx npm@7 view ${rootPackageJson.name}@${currentElectronVersion} --json`).toString('utf-8');
     // It's possible this is a re-run and we already have published the package, if not we just publish like normal
     if (!existingVersionJSON) {

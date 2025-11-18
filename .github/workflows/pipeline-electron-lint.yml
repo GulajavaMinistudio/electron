@@ -8,6 +8,8 @@ on:
         description: 'Container to run lint in'
         type: string
 
+permissions: {}
+
 concurrency:
   group: electron-lint-${{ github.ref_protected == true && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.ref_protected != true }}
@@ -18,12 +20,14 @@ env:
 jobs:
   lint:
     name: Lint
-    runs-on: electron-arc-linux-amd64-4core
+    runs-on: electron-arc-centralus-linux-amd64-4core
+    permissions:
+      contents: read
     timeout-minutes: 20
     container: ${{ fromJSON(inputs.container) }}
     steps:
     - name: Checkout Electron
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
       with:
         path: src/electron
         fetch-depth: 0
@@ -61,6 +65,9 @@ jobs:
         curl -sL "https://chromium.googlesource.com/chromium/src/+/${chromium_revision}/buildtools/DEPS?format=TEXT" | base64 -d > src/buildtools/DEPS
 
         gclient sync --spec="solutions=[{'name':'src/buildtools','url':None,'deps_file':'DEPS','custom_vars':{'process_deps':True},'managed':False}]"
+    - name: Add ESLint problem matcher
+      shell: bash
+      run: echo "::add-matcher::src/electron/.github/problem-matchers/eslint-stylish.json"
     - name: Run Lint
       shell: bash
       run: |
@@ -71,11 +78,11 @@ jobs:
         # but then we would lint its contents (at least gn format), and it doesn't pass it.
 
         cd src/electron
-        node script/yarn install --frozen-lockfile
-        node script/yarn lint
+        node script/yarn.js install --immutable
+        node script/yarn.js lint
     - name: Run Script Typechecker
       shell: bash
       run: |
         cd src/electron
-        node script/yarn tsc -p tsconfig.script.json
+        node script/yarn.js tsc -p tsconfig.script.json
     

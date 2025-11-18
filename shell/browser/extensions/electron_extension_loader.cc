@@ -12,6 +12,8 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/notimplemented.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/thread_restrictions.h"
@@ -143,8 +145,9 @@ void ElectronExtensionLoader::FinishExtensionLoad(
   if (extension) {
     extension_registrar_->AddExtension(extension);
 
-    // Write extension install time to ExtensionPrefs. This is required by
-    // WebRequestAPI which calls extensions::ExtensionPrefs::GetInstallTime.
+    // Write extension install time to ExtensionPrefs.
+    // This is required by extensions::WebRequestAPI
+    // which calls extensions::ExtensionPrefs::GetInstallTime.
     //
     // Implementation for writing the pref was based on
     // PreferenceAPIBase::SetExtensionControlledPref.

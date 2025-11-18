@@ -13,19 +13,20 @@ app.requestSingleInstanceLock API so that users can pass in a JSON
 object for the second instance to send to the first instance.
 
 diff --git a/chrome/browser/process_singleton.h b/chrome/browser/process_singleton.h
-index 085b00fbb3ff95cdcde2a46760ab449808b4c1a9..22d5c994a6944ce7ea725ee045d9801126c32dd4 100644
+index 2748dd196fe1f56357348a204e24f0b8a28b97dd..5800dd00b47c657d9e6766f3fc5a30654cffffa6 100644
 --- a/chrome/browser/process_singleton.h
 +++ b/chrome/browser/process_singleton.h
-@@ -18,6 +18,8 @@
+@@ -18,7 +18,8 @@
  #include "base/functional/callback.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/process/process.h"
+-
 +#include "base/containers/span.h"
 +#include "base/memory/raw_span.h"
- #include "ui/gfx/native_widget_types.h"
- 
  #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
-@@ -100,21 +102,24 @@ class ProcessSingleton {
+ #include "base/files/scoped_temp_dir.h"
+ #endif
+@@ -99,21 +100,24 @@ class ProcessSingleton {
    // should handle it (i.e., because the current process is shutting down).
    using NotificationCallback =
        base::RepeatingCallback<bool(base::CommandLine command_line,
@@ -52,7 +53,7 @@ index 085b00fbb3ff95cdcde2a46760ab449808b4c1a9..22d5c994a6944ce7ea725ee045d98011
    ~ProcessSingleton();
  
    // Notify another process, if available. Otherwise sets ourselves as the
-@@ -178,7 +183,10 @@ class ProcessSingleton {
+@@ -177,7 +181,10 @@ class ProcessSingleton {
  #endif
  
   private:
@@ -179,7 +180,7 @@ index 08cbe32a258bf478f1da0a07064d3e9ef14c44a5..b9f2a43cb90fac4b031a4b4da38d6435
    if (!WriteToSocket(socket.fd(), to_send.data(), to_send.length())) {
      // Try to kill the other process, because it might have been dead.
 diff --git a/chrome/browser/process_singleton_win.cc b/chrome/browser/process_singleton_win.cc
-index d91f58ebe3a024bc41ed72121c49172f68e0d862..7b85ba5ed8d0c2a152899ad65f275e6680a93dba 100644
+index ae659d84a5ae2f2e87ce288477506575f8d86839..d93c7e8487ab1a2bbb5f56f2ca44868f947e6bfc 100644
 --- a/chrome/browser/process_singleton_win.cc
 +++ b/chrome/browser/process_singleton_win.cc
 @@ -81,10 +81,12 @@ BOOL CALLBACK BrowserWindowEnumeration(HWND window, LPARAM param) {
@@ -257,11 +258,11 @@ index d91f58ebe3a024bc41ed72121c49172f68e0d862..7b85ba5ed8d0c2a152899ad65f275e66
  
 -  switch (AttemptToNotifyRunningChrome(remote_window_)) {
 +  switch (AttemptToNotifyRunningChrome(remote_window_, additional_data_)) {
-     case NotifyChromeResult::NOTIFY_SUCCESS:
+     case NotifyChromeResult::kSuccess:
        return PROCESS_NOTIFIED;
-     case NotifyChromeResult::NOTIFY_FAILED:
+     case NotifyChromeResult::kFailed:
 diff --git a/chrome/browser/win/chrome_process_finder.cc b/chrome/browser/win/chrome_process_finder.cc
-index 019ac7e93e009a713ce56ee8bcacf467b4fe769d..283693966c041340983aa78a95f8a274db601fb4 100644
+index 594f3bc08a4385c177fb488123cef79448e94850..5a1dde19a4bc2bf728eba4c738f831c3e5b73942 100644
 --- a/chrome/browser/win/chrome_process_finder.cc
 +++ b/chrome/browser/win/chrome_process_finder.cc
 @@ -39,7 +39,9 @@ HWND FindRunningChromeWindow(const base::FilePath& user_data_dir) {
@@ -275,9 +276,9 @@ index 019ac7e93e009a713ce56ee8bcacf467b4fe769d..283693966c041340983aa78a95f8a274
    TRACE_EVENT0("startup", "AttemptToNotifyRunningChrome");
  
    DCHECK(remote_window);
-@@ -68,12 +70,24 @@ NotifyChromeResult AttemptToNotifyRunningChrome(HWND remote_window) {
-     new_command_line.AppendSwitchNative(switches::kSourceShortcut, si.lpTitle);
- 
+@@ -70,12 +72,24 @@ NotifyChromeResult AttemptToNotifyRunningChrome(HWND remote_window) {
+     new_command_line.AppendSwitch(switches::kSourceAppId);
+   }
    // Send the command line to the remote chrome window.
 -  // Format is "START\0<<<current directory>>>\0<<<commandline>>>".
 +  // Format is
@@ -302,7 +303,7 @@ index 019ac7e93e009a713ce56ee8bcacf467b4fe769d..283693966c041340983aa78a95f8a274
    // window (otherwise it will just flash in the taskbar).
    ::AllowSetForegroundWindow(process_id);
 diff --git a/chrome/browser/win/chrome_process_finder.h b/chrome/browser/win/chrome_process_finder.h
-index 91e5e623840b9912bd05d024c12e3eb3f1ba2f53..63b5b10013c96dea4e77e5e56a060973a1752faa 100644
+index 62e232f41189a557534e0b01d912469b2ca26148..3a4dfb027cdc690ee7561fc8b632f35cb6b8f4be 100644
 --- a/chrome/browser/win/chrome_process_finder.h
 +++ b/chrome/browser/win/chrome_process_finder.h
 @@ -7,6 +7,7 @@

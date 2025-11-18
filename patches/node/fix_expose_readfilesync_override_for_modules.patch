@@ -8,10 +8,10 @@ an API override to replace the native `ReadFileSync` in the `modules`
 binding.
 
 diff --git a/src/env_properties.h b/src/env_properties.h
-index ba8c80ff2842c63f16cae51cfa8084617bb35bf5..820aebd18d22bcef4992b09ffc8924e9b758fd3e 100644
+index 2884149d82d180e0d2ecfa7ac8fd92f201f1cb55..dded4bf3d7106d127efbad81087f0c375b2b2c95 100644
 --- a/src/env_properties.h
 +++ b/src/env_properties.h
-@@ -485,6 +485,7 @@
+@@ -490,6 +490,7 @@
    V(maybe_cache_generated_source_map, v8::Function)                            \
    V(messaging_deserialize_create_object, v8::Function)                         \
    V(message_port, v8::Object)                                                  \
@@ -20,18 +20,18 @@ index ba8c80ff2842c63f16cae51cfa8084617bb35bf5..820aebd18d22bcef4992b09ffc8924e9
    V(performance_entry_callback, v8::Function)                                  \
    V(prepare_stack_trace_callback, v8::Function)                                \
 diff --git a/src/node_modules.cc b/src/node_modules.cc
-index 4e9f70a1c41b44d2a1863b778d4f1e37279178d9..c56a32885b8debbd5b95a2c11f3838d4088e05ac 100644
+index 9eec93f52f0d0b2e45ae04ff357b4ced0770782f..eea4ba313d8dbcf7b88b79f5a3e9ba2eb39d7c3e 100644
 --- a/src/node_modules.cc
 +++ b/src/node_modules.cc
-@@ -21,6 +21,7 @@ namespace modules {
- 
+@@ -23,6 +23,7 @@ namespace modules {
  using v8::Array;
  using v8::Context;
+ using v8::External;
 +using v8::Function;
  using v8::FunctionCallbackInfo;
  using v8::HandleScope;
- using v8::Isolate;
-@@ -88,6 +89,7 @@ Local<Array> BindingData::PackageConfig::Serialize(Realm* realm) const {
+ using v8::Integer;
+@@ -94,6 +95,7 @@ Local<Array> BindingData::PackageConfig::Serialize(Realm* realm) const {
  
  const BindingData::PackageConfig* BindingData::GetPackageJSON(
      Realm* realm, std::string_view path, ErrorContext* error_context) {
@@ -39,7 +39,7 @@ index 4e9f70a1c41b44d2a1863b778d4f1e37279178d9..c56a32885b8debbd5b95a2c11f3838d4
    auto binding_data = realm->GetBindingData<BindingData>();
  
    auto cache_entry = binding_data->package_configs_.find(path.data());
-@@ -97,8 +99,36 @@ const BindingData::PackageConfig* BindingData::GetPackageJSON(
+@@ -103,8 +105,36 @@ const BindingData::PackageConfig* BindingData::GetPackageJSON(
  
    PackageConfig package_config{};
    package_config.file_path = path;
@@ -76,8 +76,8 @@ index 4e9f70a1c41b44d2a1863b778d4f1e37279178d9..c56a32885b8debbd5b95a2c11f3838d4
 +  if (read_err < 0) {
      return nullptr;
    }
-   // In some systems, std::string is annotated to generate an
-@@ -248,6 +278,12 @@ const BindingData::PackageConfig* BindingData::GetPackageJSON(
+   simdjson::ondemand::document document;
+@@ -242,6 +272,12 @@ const BindingData::PackageConfig* BindingData::GetPackageJSON(
    return &cached.first->second;
  }
  
@@ -90,7 +90,7 @@ index 4e9f70a1c41b44d2a1863b778d4f1e37279178d9..c56a32885b8debbd5b95a2c11f3838d4
  void BindingData::ReadPackageJSON(const FunctionCallbackInfo<Value>& args) {
    CHECK_GE(args.Length(), 1);  // path, [is_esm, base, specifier]
    CHECK(args[0]->IsString());  // path
-@@ -556,6 +592,8 @@ void GetCompileCacheDir(const FunctionCallbackInfo<Value>& args) {
+@@ -635,6 +671,8 @@ void SaveCompileCacheEntry(const FunctionCallbackInfo<Value>& args) {
  void BindingData::CreatePerIsolateProperties(IsolateData* isolate_data,
                                               Local<ObjectTemplate> target) {
    Isolate* isolate = isolate_data->isolate();
@@ -99,7 +99,7 @@ index 4e9f70a1c41b44d2a1863b778d4f1e37279178d9..c56a32885b8debbd5b95a2c11f3838d4
    SetMethod(isolate, target, "readPackageJSON", ReadPackageJSON);
    SetMethod(isolate,
              target,
-@@ -595,6 +633,8 @@ void BindingData::CreatePerContextProperties(Local<Object> target,
+@@ -694,6 +732,8 @@ void BindingData::CreatePerContextProperties(Local<Object> target,
  
  void BindingData::RegisterExternalReferences(
      ExternalReferenceRegistry* registry) {
@@ -107,9 +107,9 @@ index 4e9f70a1c41b44d2a1863b778d4f1e37279178d9..c56a32885b8debbd5b95a2c11f3838d4
 +
    registry->Register(ReadPackageJSON);
    registry->Register(GetNearestParentPackageJSONType);
-   registry->Register(GetNearestParentPackageJSON);
+   registry->Register(GetPackageScopeConfig<false>);
 diff --git a/src/node_modules.h b/src/node_modules.h
-index 17909b2270454b3275c7bf2e50d4b9b35673ecc8..3d5b0e3ac65524adfe221bfd6f85360dee1f0bee 100644
+index e4ba6b75bc86d14deada835903ba68a4cb0eccc5..ae77f9ec81b358bd356993617cd07671d382e8ca 100644
 --- a/src/node_modules.h
 +++ b/src/node_modules.h
 @@ -54,6 +54,8 @@ class BindingData : public SnapshotableObject {
@@ -119,5 +119,5 @@ index 17909b2270454b3275c7bf2e50d4b9b35673ecc8..3d5b0e3ac65524adfe221bfd6f85360d
 +  static void OverrideReadFileSync(
 +      const v8::FunctionCallbackInfo<v8::Value>& args);
    static void ReadPackageJSON(const v8::FunctionCallbackInfo<v8::Value>& args);
-   static void GetNearestParentPackageJSON(
+   static void GetNearestParentPackageJSONType(
        const v8::FunctionCallbackInfo<v8::Value>& args);

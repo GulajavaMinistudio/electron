@@ -75,10 +75,12 @@ namespace electron {
 namespace {
 
 #if BUILDFLAG(IS_WIN)
-gfx::Size GetExpandedWindowSize(const NativeWindow* window, gfx::Size size) {
+gfx::Size GetExpandedWindowSize(const NativeWindow* window,
+                                bool transparent,
+                                gfx::Size size) {
   if (!base::FeatureList::IsEnabled(
           views::features::kEnableTransparentHwndEnlargement) ||
-      !window->transparent()) {
+      !transparent) {
     return size;
   }
 
@@ -97,46 +99,29 @@ gfx::Size GetExpandedWindowSize(const NativeWindow* window, gfx::Size size) {
 
 NativeWindow::NativeWindow(const gin_helper::Dictionary& options,
                            NativeWindow* parent)
-    : widget_(std::make_unique<views::Widget>()), parent_(parent) {
-  options.Get(options::kFrame, &has_frame_);
-  options.Get(options::kTransparent, &transparent_);
-  options.Get(options::kEnableLargerThanScreen, &enable_larger_than_screen_);
-  options.Get(options::kTitleBarStyle, &title_bar_style_);
+    : title_bar_style_{options.ValueOrDefault(options::kTitleBarStyle,
+                                              TitleBarStyle::kNormal)},
+      transparent_{options.ValueOrDefault(options::kTransparent, false)},
+      enable_larger_than_screen_{
+          options.ValueOrDefault(options::kEnableLargerThanScreen, false)},
+      is_modal_{parent != nullptr &&
+                options.ValueOrDefault(options::kModal, false)},
+      has_frame_{options.ValueOrDefault(options::kFrame, true) &&
+                 title_bar_style_ == TitleBarStyle::kNormal},
+      parent_{parent} {
 #if BUILDFLAG(IS_WIN)
   options.Get(options::kBackgroundMaterial, &background_material_);
 #elif BUILDFLAG(IS_MAC)
   options.Get(options::kVibrancyType, &vibrancy_);
 #endif
 
-  v8::Local<v8::Value> titlebar_overlay;
-  if (options.Get(options::ktitleBarOverlay, &titlebar_overlay)) {
-    if (titlebar_overlay->IsBoolean()) {
-      options.Get(options::ktitleBarOverlay, &titlebar_overlay_);
-    } else if (titlebar_overlay->IsObject()) {
-      titlebar_overlay_ = true;
-
-      auto titlebar_overlay_dict =
-          gin_helper::Dictionary::CreateEmpty(options.isolate());
-      options.Get(options::ktitleBarOverlay, &titlebar_overlay_dict);
-      int height;
-      if (titlebar_overlay_dict.Get(options::kOverlayHeight, &height))
-        titlebar_overlay_height_ = height;
-    }
+  if (gin_helper::Dictionary dict;
+      options.Get(options::ktitleBarOverlay, &dict)) {
+    titlebar_overlay_ = true;
+    titlebar_overlay_height_ = dict.ValueOrDefault(options::kOverlayHeight, 0);
+  } else if (bool flag; options.Get(options::ktitleBarOverlay, &flag)) {
+    titlebar_overlay_ = flag;
   }
-
-  if (parent)
-    options.Get("modal", &is_modal_);
-
-#if defined(USE_OZONE)
-  // Ozone X11 likes to prefer custom frames, but we don't need them unless
-  // on Wayland.
-  if (base::FeatureList::IsEnabled(features::kWaylandWindowDecorations) &&
-      !ui::OzonePlatform::GetInstance()
-           ->GetPlatformRuntimeProperties()
-           .supports_server_side_window_decorations) {
-    has_client_frame_ = true;
-  }
-#endif
 
   WindowList::AddWindow(this);
 }
@@ -152,19 +137,17 @@ NativeWindow::~NativeWindow() {
 
 void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   // Setup window from options.
-  int x = -1, y = -1;
-  bool center;
-  if (options.Get(options::kX, &x) && options.Get(options::kY, &y)) {
-    SetPosition(gfx::Point(x, y));
+  if (int x, y; options.Get(options::kX, &x) && options.Get(options::kY, &y)) {
+    SetPosition(gfx::Point{x, y});
 
 #if BUILDFLAG(IS_WIN)
     // FIXME(felixrieseberg): Dirty, dirty workaround for
     // https://github.com/electron/electron/issues/10862
     // Somehow, we need to call `SetBounds` twice to get
     // usable results. The root cause is still unknown.
-    SetPosition(gfx::Point(x, y));
+    SetPosition(gfx::Point{x, y});
 #endif
-  } else if (options.Get(options::kCenter, &center) && center) {
+  } else if (bool center; options.Get(options::kCenter, &center) && center) {
     Center();
   }
 
@@ -203,27 +186,21 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
     SetSizeConstraints(size_constraints);
   }
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
-  bool closable;
-  if (options.Get(options::kClosable, &closable)) {
-    SetClosable(closable);
-  }
+  if (bool val; options.Get(options::kClosable, &val))
+    SetClosable(val);
 #endif
-  bool movable;
-  if (options.Get(options::kMovable, &movable)) {
-    SetMovable(movable);
-  }
-  bool has_shadow;
-  if (options.Get(options::kHasShadow, &has_shadow)) {
-    SetHasShadow(has_shadow);
-  }
-  double opacity;
-  if (options.Get(options::kOpacity, &opacity)) {
-    SetOpacity(opacity);
-  }
-  bool top;
-  if (options.Get(options::kAlwaysOnTop, &top) && top) {
+
+  if (bool val; options.Get(options::kMovable, &val))
+    SetMovable(val);
+
+  if (bool val; options.Get(options::kHasShadow, &val))
+    SetHasShadow(val);
+
+  if (double val; options.Get(options::kOpacity, &val))
+    SetOpacity(val);
+
+  if (bool val; options.Get(options::kAlwaysOnTop, &val) && val)
     SetAlwaysOnTop(ui::ZOrderLevel::kFloatingWindow);
-  }
 
   bool fullscreenable = true;
   bool fullscreen = false;
@@ -240,42 +217,32 @@ void NativeWindow::InitFromOptions(const gin_helper::Dictionary& options) {
   if (fullscreen)
     SetFullScreen(true);
 
-  bool resizable;
-  if (options.Get(options::kResizable, &resizable)) {
-    SetResizable(resizable);
-  }
+  if (bool val; options.Get(options::kResizable, &val))
+    SetResizable(val);
 
-  bool skip;
-  if (options.Get(options::kSkipTaskbar, &skip)) {
-    SetSkipTaskbar(skip);
-  }
-  bool kiosk;
-  if (options.Get(options::kKiosk, &kiosk) && kiosk) {
-    SetKiosk(kiosk);
-  }
+  if (bool val; options.Get(options::kSkipTaskbar, &val))
+    SetSkipTaskbar(val);
+
+  if (bool val; options.Get(options::kKiosk, &val) && val)
+    SetKiosk(val);
+
 #if BUILDFLAG(IS_MAC)
-  std::string type;
-  if (options.Get(options::kVibrancyType, &type)) {
-    SetVibrancy(type, 0);
-  }
+  if (std::string val; options.Get(options::kVibrancyType, &val))
+    SetVibrancy(val, 0);
 #elif BUILDFLAG(IS_WIN)
-  std::string material;
-  if (options.Get(options::kBackgroundMaterial, &material)) {
-    SetBackgroundMaterial(material);
-  }
+  if (std::string val; options.Get(options::kBackgroundMaterial, &val))
+    SetBackgroundMaterial(val);
 #endif
 
   SkColor background_color = SK_ColorWHITE;
   if (std::string color; options.Get(options::kBackgroundColor, &color)) {
-    background_color = ParseCSSColor(color);
+    background_color = ParseCSSColor(color).value_or(SK_ColorWHITE);
   } else if (IsTranslucent()) {
     background_color = SK_ColorTRANSPARENT;
   }
   SetBackgroundColor(background_color);
 
-  std::string title(Browser::Get()->GetName());
-  options.Get(options::kTitle, &title);
-  SetTitle(title);
+  SetTitle(options.ValueOrDefault(options::kTitle, Browser::Get()->GetName()));
 
   // Then show it.
   if (options.ValueOrDefault(options::kShow, true))
@@ -287,6 +254,14 @@ NativeWindow* NativeWindow::FromWidget(const views::Widget* widget) {
   DCHECK(widget);
   return static_cast<NativeWindow*>(
       widget->GetNativeWindowProperty(kNativeWindowKey.c_str()));
+}
+
+void NativeWindow::SetShape(const std::vector<gfx::Rect>& rects) {
+  widget()->SetShape(std::make_unique<std::vector<gfx::Rect>>(rects));
+}
+
+bool NativeWindow::IsClosed() const {
+  return is_closed_;
 }
 
 void NativeWindow::SetSize(const gfx::Size& size, bool animate) {
@@ -413,14 +388,15 @@ gfx::Size NativeWindow::GetContentMinimumSize() const {
 }
 
 gfx::Size NativeWindow::GetContentMaximumSize() const {
-  gfx::Size maximum_size = GetContentSizeConstraints().GetMaximumSize();
+  const auto size_constraints = GetContentSizeConstraints();
+  gfx::Size maximum_size = size_constraints.GetMaximumSize();
+
 #if BUILDFLAG(IS_WIN)
-  return GetContentSizeConstraints().HasMaximumSize()
-             ? GetExpandedWindowSize(this, maximum_size)
-             : maximum_size;
-#else
-  return maximum_size;
+  if (size_constraints.HasMaximumSize())
+    maximum_size = GetExpandedWindowSize(this, transparent(), maximum_size);
 #endif
+
+  return maximum_size;
 }
 
 void NativeWindow::SetSheetOffset(const double offsetX, const double offsetY) {
@@ -526,23 +502,8 @@ void NativeWindow::NotifyWindowCloseButtonClicked() {
   CloseImmediately();
 }
 
-void NativeWindow::Close() {
-  if (!IsClosable()) {
-    WindowList::WindowCloseCancelled(this);
-    return;
-  }
-
-  if (!is_closed())
-    CloseImpl();
-}
-
-void NativeWindow::CloseImmediately() {
-  if (!is_closed())
-    CloseImmediatelyImpl();
-}
-
 void NativeWindow::NotifyWindowClosed() {
-  if (is_closed())
+  if (is_closed_)
     return;
 
   is_closed_ = true;
@@ -718,7 +679,7 @@ int NativeWindow::NonClientHitTest(const gfx::Point& point) {
 
   // This is to disable dragging in HTML5 full screen mode.
   // Details: https://github.com/electron/electron/issues/41002
-  if (GetWidget()->IsFullscreen())
+  if (widget()->IsFullscreen())
     return HTNOWHERE;
 
   for (auto* provider : draggable_region_providers_) {
@@ -758,7 +719,7 @@ void NativeWindow::RemoveBackgroundThrottlingSource(
 }
 
 void NativeWindow::UpdateBackgroundThrottlingState() {
-  if (!GetWidget() || !GetWidget()->GetCompositor()) {
+  if (!widget() || !widget()->GetCompositor()) {
     return;
   }
   bool enable_background_throttling = true;
@@ -769,7 +730,7 @@ void NativeWindow::UpdateBackgroundThrottlingState() {
       break;
     }
   }
-  GetWidget()->GetCompositor()->SetBackgroundThrottling(
+  widget()->GetCompositor()->SetBackgroundThrottling(
       enable_background_throttling);
 }
 
@@ -831,6 +792,22 @@ bool NativeWindow::IsTranslucent() const {
 #endif
 
   return false;
+}
+
+// static
+bool NativeWindow::PlatformHasClientFrame() {
+#if defined(USE_OZONE)
+  // Ozone X11 likes to prefer custom frames,
+  // but we don't need them unless on Wayland.
+  static const bool has_client_frame =
+      base::FeatureList::IsEnabled(features::kWaylandWindowDecorations) &&
+      !ui::OzonePlatform::GetInstance()
+           ->GetPlatformRuntimeProperties()
+           .supports_server_side_window_decorations;
+  return has_client_frame;
+#else
+  return false;
+#endif
 }
 
 // static

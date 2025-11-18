@@ -20,6 +20,7 @@ class ElectronDesktopWindowTreeHostWin : public views::DesktopWindowTreeHostWin,
  public:
   ElectronDesktopWindowTreeHostWin(
       NativeWindowViews* native_window_view,
+      views::Widget* widget,
       views::DesktopNativeWidgetAura* desktop_native_widget_aura);
   ~ElectronDesktopWindowTreeHostWin() override;
 
@@ -51,8 +52,11 @@ class ElectronDesktopWindowTreeHostWin : public views::DesktopWindowTreeHostWin,
   bool ShouldWindowContentsBeTransparent() const override;
 
  private:
+  void UpdateAllowScreenshots();
+
   raw_ptr<NativeWindowViews> native_window_view_;  // weak ref
   std::optional<bool> force_should_paint_as_active_;
+  bool allow_screenshots_ = true;
   bool widget_init_done_ = false;
 };
 

@@ -8,7 +8,7 @@ they use themselves as the entry point. We should try to upstream some form
 of this.
 
 diff --git a/lib/internal/process/pre_execution.js b/lib/internal/process/pre_execution.js
-index d1c05d1717cdc825c4e48885c963c9ed65bcf51c..278665921c5160ff10b3178db27d4df319fab6b3 100644
+index c7f86098bdb00b6be84d547a0ac41919fa1bbb0f..35b43990c8f24f0888f89173f5662050a11b26ed 100644
 --- a/lib/internal/process/pre_execution.js
 +++ b/lib/internal/process/pre_execution.js
 @@ -243,12 +243,14 @@ function patchProcessObject(expandArgv1) {

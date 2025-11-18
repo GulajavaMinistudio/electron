@@ -11,10 +11,10 @@ node-gyp will use the result of `process.config` that reflects the environment
 in which the binary got built.
 
 diff --git a/common.gypi b/common.gypi
-index 99b147482b636706b1372b89298f35b60ca2bb31..5024e5fb0aee210f4986572638a523db6d26b4cc 100644
+index aea3a882c338eb757bef9e85fabab3fc7e7495f7..9303217fb05190c734e410a524a6921723d665d5 100644
 --- a/common.gypi
 +++ b/common.gypi
-@@ -127,6 +127,7 @@
+@@ -128,6 +128,7 @@
          'v8_base': '<(PRODUCT_DIR)/obj.target/tools/v8_gypfiles/libv8_snapshot.a',
        }],
        ['OS=="mac"', {

@@ -13,6 +13,7 @@
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "shell/browser/api/electron_api_web_contents.h"
+#include "shell/browser/linux/x11_util.h"
 #include "shell/browser/native_window_features.h"
 #include "shell/browser/native_window_views.h"
 #include "shell/browser/ui/views/client_frame_view_linux.h"
@@ -25,6 +26,7 @@
 #include "ui/linux/linux_ui.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/platform_window/platform_window.h"
+#include "ui/platform_window/platform_window_init_properties.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_linux.h"
 
@@ -32,10 +34,10 @@ namespace electron {
 
 ElectronDesktopWindowTreeHostLinux::ElectronDesktopWindowTreeHostLinux(
     NativeWindowViews* native_window_view,
+    views::Widget* widget,
     views::DesktopNativeWidgetAura* desktop_native_widget_aura)
-    : views::DesktopWindowTreeHostLinux(native_window_view->widget(),
-                                        desktop_native_widget_aura),
-      native_window_view_(native_window_view) {}
+    : views::DesktopWindowTreeHostLinux{widget, desktop_native_widget_aura},
+      native_window_view_{native_window_view} {}
 
 ElectronDesktopWindowTreeHostLinux::~ElectronDesktopWindowTreeHostLinux() =
     default;
@@ -63,13 +65,9 @@ gfx::Insets ElectronDesktopWindowTreeHostLinux::CalculateInsetsInDIP(
     return gfx::Insets();
   }
 
-  if (!native_window_view_->has_frame() ||
-      !native_window_view_->has_client_frame()) {
-    return gfx::Insets();
-  }
-
-  auto* view = static_cast<ClientFrameViewLinux*>(
-      native_window_view_->widget()->non_client_view()->frame_view());
+  auto* const view = native_window_view_->GetClientFrameViewLinux();
+  if (!view)
+    return {};
 
   gfx::Insets insets = view->RestoredMirroredFrameBorderInsets();
   if (base::i18n::IsRTL())
@@ -82,9 +80,7 @@ void ElectronDesktopWindowTreeHostLinux::OnBoundsChanged(
   views::DesktopWindowTreeHostLinux::OnBoundsChanged(change);
   UpdateFrameHints();
 
-  if (ui::OzonePlatform::GetInstance()
-          ->GetPlatformProperties()
-          .electron_can_call_x11) {
+  if (x11_util::IsX11()) {
     // The OnWindowStateChanged should receive all updates but currently under
     // X11 it doesn't receive changes to the fullscreen status because chromium
     // is handling the fullscreen state changes synchronously, see
@@ -103,21 +99,20 @@ void ElectronDesktopWindowTreeHostLinux::OnWindowStateChanged(
 
 void ElectronDesktopWindowTreeHostLinux::OnWindowTiledStateChanged(
     ui::WindowTiledEdges new_tiled_edges) {
-  // CreateNonClientFrameView creates `ClientFrameViewLinux` only when both
-  // frame and client_frame booleans are set, otherwise it is a different type
-  // of view.
-  if (native_window_view_->has_frame() &&
-      native_window_view_->has_client_frame()) {
-    ClientFrameViewLinux* frame = static_cast<ClientFrameViewLinux*>(
-        native_window_view_->widget()->non_client_view()->frame_view());
-
-    bool maximized = new_tiled_edges.top && new_tiled_edges.left &&
-                     new_tiled_edges.bottom && new_tiled_edges.right;
+  if (auto* const view = native_window_view_->GetClientFrameViewLinux()) {
+    // GNOME on Ubuntu reports all edges as tiled
+    // even if the window is only half-tiled so do not trust individual edge
+    // values.
+    bool maximized = native_window_view_->IsMaximized();
     bool tiled = new_tiled_edges.top || new_tiled_edges.left ||
                  new_tiled_edges.bottom || new_tiled_edges.right;
-    frame->set_tiled(tiled && !maximized);
+    view->set_tiled(tiled && !maximized);
   }
   UpdateFrameHints();
+  ScheduleRelayout();
+  if (GetWidget()->non_client_view()) {
+    GetWidget()->non_client_view()->SchedulePaint();
+  }
 }
 
 void ElectronDesktopWindowTreeHostLinux::UpdateWindowState(
@@ -167,15 +162,13 @@ void ElectronDesktopWindowTreeHostLinux::OnDeviceScaleFactorChanged() {
 
 void ElectronDesktopWindowTreeHostLinux::UpdateFrameHints() {
   if (base::FeatureList::IsEnabled(features::kWaylandWindowDecorations)) {
-    if (!native_window_view_->has_frame() ||
-        !native_window_view_->has_client_frame())
+    auto* const view = native_window_view_->GetClientFrameViewLinux();
+    if (!view)
       return;
 
     ui::PlatformWindow* window = platform_window();
     auto window_state = window->GetPlatformWindowState();
     float scale = device_scale_factor();
-    auto* view = static_cast<ClientFrameViewLinux*>(
-        native_window_view_->widget()->non_client_view()->frame_view());
     const gfx::Size widget_size =
         view->GetWidget()->GetWindowBoundsInScreen().size();
 
@@ -296,7 +289,7 @@ void ElectronDesktopWindowTreeHostLinux::DispatchEvent(ui::Event* event) {
                   ->GetPlatformRuntimeProperties()
                   .supports_server_window_menus) {
             views::DesktopWindowTreeHostLinux::ShowWindowControlsMenu(
-                display::Screen::GetScreen()->GetCursorScreenPoint());
+                display::Screen::Get()->GetCursorScreenPoint());
           }
         }
         return;
@@ -305,6 +298,16 @@ void ElectronDesktopWindowTreeHostLinux::DispatchEvent(ui::Event* event) {
   }
 
   views::DesktopWindowTreeHostLinux::DispatchEvent(event);
+}
+
+void ElectronDesktopWindowTreeHostLinux::AddAdditionalInitProperties(
+    const views::Widget::InitParams& params,
+    ui::PlatformWindowInitProperties* properties) {
+  views::DesktopWindowTreeHostLinux::AddAdditionalInitProperties(params,
+                                                                 properties);
+  const auto* linux_ui_theme = ui::LinuxUiTheme::GetForProfile(nullptr);
+  properties->prefer_dark_theme =
+      linux_ui_theme && linux_ui_theme->PreferDarkTheme();
 }
 
 }  // namespace electron
